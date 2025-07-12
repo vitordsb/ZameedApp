@@ -142,7 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         title: "Cadastro realizado",
         description: "Bem-vindo(a)!",
       });
-      queryClient.setQueryData(["/auth/login"], newUser);
+      queryClient.setQueryData(["/user"], newUser);
     },
     onError: (error) => {
       console.error("Register error:", error);

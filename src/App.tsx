@@ -8,10 +8,8 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import SocialFeed from "@/pages/SocialFeed";
 import ClientProfile from "@/pages/ClientProfile";
-import Marketplace from "@/pages/Marketplace";
 import DemandsFeed from "@/pages/DemandsFeed";
 import ProviderProfile from "@/pages/ProviderProfile";
-import SearchResults from "@/pages/SearchResults";
 import AuthPage from "@/pages/auth-page";
 import AdminDashboard from "@/pages/AdminDashboard";
 import Messages from "@/pages/Messages";
@@ -34,13 +32,11 @@ function ProtectedRouter() {
       {/* ProtectedRoutes that should use the application layout */}
       <ProtectedRoute path="/profile" component={Profile} guestAllowed />
       <ProtectedRoute path="/home" component={SocialFeed} guestAllowed />
-      <ProtectedRoute path="/marketplace" component={Marketplace} guestAllowed />
       <ProtectedRoute path="/home/demands" component={DemandsFeed} guestAllowed />
       <ProtectedRoute path="/home/viewService" component={ServicePage} guestAllowed />
       <ProtectedRoute path="/home/services" component={ServicesFeed} guestAllowed />
       <ProtectedRoute path="/providers/:provider_id" component={ProviderProfile} guestAllowed />
       <ProtectedRoute path="/user/:user_id" component={ClientProfile} guestAllowed />
-      <ProtectedRoute path="/search" component={SearchResults} guestAllowed />
       <ProtectedRoute path="/test-auth" component={TestAuth} guestAllowed />
       <ProtectedRoute path="/messages" component={Messages} />
       {/* Admin routes */}

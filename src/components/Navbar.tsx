@@ -102,11 +102,6 @@ const Navbar = () => {
               <Image className="w-4 h-4" /> Demandas  
             </div>
           </Link>
-          <Link href="/home/products">
-            <div className="flex items-center gap-1 text-sm text-gray-700 hover:text-amber-500">
-              <ShoppingBag className="w-4 h-4" /> Produtos
-            </div>
-            </Link>
           {isLoggedIn && (
             <Link href="/messages">
               <div className="relative">

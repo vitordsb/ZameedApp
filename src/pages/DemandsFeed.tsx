@@ -1,4 +1,5 @@
-// src/pages/ServicesFeed.tsx
+
+// src/pages/DemandsPage.tsx
 import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import ApplicationLayout from "@/components/layouts/ApplicationLayout";
@@ -28,36 +29,42 @@ import {
   Filter,
   TrendingUp,
   Award,
+  Briefcase,
 } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
 
-interface ServiceFreelancer {
-  id_serviceFreelancer: number;
-  id_provider: number;
+interface Demand {
+  id_demand: number;
+  id_user: number;
   title: string;
   description: string;
   price: number;
+  status: string;
   created_at: string;
   updated_at: string;
+  User?: UserData; // Adiciona a propriedade User opcional
 }
 
-interface Provider {
-  provider_id: number;
-  user_id: number;
-}
-
-interface User {
+interface UserData {
   id: number;
   name: string;
   email: string;
 }
 
-interface EnrichedService extends ServiceFreelancer {
+interface EnrichedDemand extends Demand {
   userName: string;
   userEmail: string;
 }
 
-export default function ServicesFeed() {
-  const [services, setServices] = useState<EnrichedService[]>([]);
+const getInitials = (name: string) => {
+  if (!name) return "";
+  const parts = name.split(" ");
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+};
+
+export default function DemandsPage() {
+  const [demands, setDemands] = useState<EnrichedDemand[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,45 +77,22 @@ export default function ServicesFeed() {
   useEffect(() => {
     (async () => {
       try {
-        const token = sessionStorage.getItem("token");
-        // 1) busca serviços
-        const srvRes = await fetch(
-          "https://zameed-backend.onrender.com/servicesfreelancer/getall",
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (!srvRes.ok) throw new Error("Erro ao buscar serviços");
-        const { servicesFreelancer } = await srvRes.json() as { servicesFreelancer: ServiceFreelancer[] };
+        // 1) busca demandas
+        const demandRes = await apiRequest("GET", "/demands/getall");
+        if (!demandRes.ok) throw new Error("Erro ao buscar demandas");
+        const body = await demandRes.json();
+        const fetchedDemands: Demand[] = Array.isArray(body.demand) ? body.demand : [];
 
-        // 2) busca providers
-        const provRes = await fetch("https://zameed-backend.onrender.com/providers", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!provRes.ok) throw new Error("Erro ao buscar prestadores");
-        const { providers } = await provRes.json() as { providers: Provider[] };
-        const provMap = new Map<number, Provider>();
-        providers.forEach(p => provMap.set(p.provider_id, p));
-
-        // 3) busca usuários
-        const usrRes = await fetch("https://zameed-backend.onrender.com/users", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!usrRes.ok) throw new Error("Erro ao buscar usuários");
-        const { users } = await usrRes.json() as { users: User[] };
-        const userMap = new Map<number, User>();
-        users.forEach(u => userMap.set(u.id, u));
-
-        // 4) enriquece serviços com nome/email
-        const enriched: EnrichedService[] = servicesFreelancer.map(s => {
-          const prov = provMap.get(s.id_provider)!;
-          const usr = userMap.get(prov.user_id)!;
+        const enriched: EnrichedDemand[] = fetchedDemands.map(d => {
           return {
-            ...s,
-            userName: usr.name,
-            userEmail: usr.email,
+            ...d,
+            userName: d.User?.name || "Usuário Desconhecido",
+            userEmail: d.User?.email || "N/A",
+            price: parseFloat(d.price as any) // Garante que o preço é um número
           };
         });
 
-        setServices(enriched);
+        setDemands(enriched);
       } catch (err: any) {
         setError(err.message);
       } finally {
@@ -120,14 +104,12 @@ export default function ServicesFeed() {
   if (loading) {
     return (
       <ApplicationLayout>
-        <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50">
+         <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50">
           <div className="flex items-center justify-center h-screen">
             <div className="text-center space-y-6 bg-white/80 backdrop-blur-sm p-8 rounded-3xl border border-white/20 shadow-xl">
-              <div className="animate-spin rounded-full h-16 w-16 border-4 border-gray-300 border-t-orange-600 mx-auto"></div>
-              <div className="space-y-2">
-                <p className="text-xl font-semibold text-slate-700">Carregando serviços</p>
-                <p className="text-slate-500">Aguarde enquanto buscamos os melhores profissionais</p>
-              </div>
+            </div>
+            <div className="animate-spin rounded-full h-16 w-16 border-4 border-gray-300 border-t-amber-600 mx-auto">
+
             </div>
           </div>
         </div>
@@ -138,34 +120,23 @@ export default function ServicesFeed() {
   if (error) {
     return (
       <ApplicationLayout>
-        <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50">
+        <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50">
           <div className="flex items-center justify-center h-screen">
             <div className="text-center space-y-6 bg-white/80 backdrop-blur-sm p-8 rounded-3xl border border-red-200 shadow-xl">
-              <div className="w-20 h-20 bg-gradient-to-br from-red-100 to-red-200 rounded-full flex items-center justify-center mx-auto">
+              <div className="w-20 h-20 bg-gradient-to-br from-amber-100 to-orange-200 rounded-full flex items-center justify-center mx-auto">
                 <span className="text-red-600 text-3xl">⚠️</span>
               </div>
-              <div className="space-y-2">
-                <p className="text-xl font-semibold text-red-700">Ops! Algo deu errado</p>
-                <p className="text-red-600">{error}</p>
               </div>
-              <Button 
-                onClick={() => window.location.reload()} 
-                className="bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-medium px-6 py-2 rounded-xl shadow-lg transition-all duration-300 hover:shadow-xl hover:-translate-y-1"
-              >
-                Tentar novamente
-              </Button>
             </div>
           </div>
-        </div>
       </ApplicationLayout>
     );
   }
 
-  // 5) filtrar + ordenar
-  let filtered = services.filter(
-    (s) =>
-      s.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.description.toLowerCase().includes(searchTerm.toLowerCase())
+  let filtered = demands.filter(
+    (d) =>
+      d.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      d.description.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   if (sortBy === "newest") {
@@ -191,39 +162,39 @@ export default function ServicesFeed() {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
+    return new Date(dateString).toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
     });
   };
 
-  const isNewService = (dateString: string) => {
-    const serviceDate = new Date(dateString);
+  const isNewDemand = (dateString: string) => {
+    const demandDate = new Date(dateString);
     const now = new Date();
-    const diffTime = Math.abs(now.getTime() - serviceDate.getTime());
+    const diffTime = Math.abs(now.getTime() - demandDate.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays <= 7; // Considera novo se foi criado nos últimos 7 dias
+    return diffDays <= 7; // Considera nova se foi criada nos últimos 7 dias
   };
 
   return (
     <ApplicationLayout>
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 scroll-smooth">
+      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 scroll-smooth">
         {/* Header Section */}
         <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 sticky top-0 z-10">
           <div className="max-w-7xl mx-auto px-6 py-8">
             <div className="text-center space-y-6 mb-8">
               <p className="text-xl text-slate-600 max-w-3xl mx-auto leading-relaxed">
-                Conecte-se com profissionais talentosos e encontre soluções personalizadas para suas necessidades
+                Descubra oportunidades de trabalho e conecte-se com clientes que precisam dos seus serviços
               </p>
               <div className="flex items-center justify-center space-x-6 text-sm text-slate-500">
                 <div className="flex items-center space-x-2">
                   <TrendingUp className="h-4 w-4 text-green-500" />
-                  <span>+{services.length} serviços ativos</span>
+                  <span>+{demands.length} demandas ativas</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <Award className="h-4 w-4 text-orange-500" />
-                  <span>Profissionais verificados</span>
+                  <Award className="h-4 w-4 text-amber-500" />
+                  <span>Clientes verificados</span>
                 </div>
               </div>
             </div>
@@ -233,13 +204,13 @@ export default function ServicesFeed() {
               <div className="relative flex-1 max-w-lg">
                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 h-5 w-5" />
                 <Input
-                  placeholder="Buscar por serviços, habilidades ou profissionais..."
+                  placeholder="Buscar por demandas, projetos ou clientes..."
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value);
                     setPage(1);
                   }}
-                  className="pl-12 h-14 bg-white/80 backdrop-blur-sm border-white/30 focus:border-orange-400 focus:ring-orange-300 rounded-2xl shadow-lg text-lg transition-all duration-300 focus:scale-105 focus:shadow-xl"
+                  className="pl-12 h-14 bg-white/80 backdrop-blur-sm border-white/30 focus:border-amber-400 focus:ring-amber-300 rounded-2xl shadow-lg text-lg transition-all duration-300 focus:scale-105 focus:shadow-xl"
                 />
               </div>
               
@@ -249,7 +220,7 @@ export default function ServicesFeed() {
                     const nextSort = sortBy === "newest" ? "priceAsc" : sortBy === "priceAsc" ? "priceDesc" : "newest";
                     setSortBy(nextSort);
                   }}
-                  className="h-14 px-6 bg-white/80 backdrop-blur-sm border-white/30 hover:border-orange-400 rounded-2xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl focus:ring-2 focus:ring-orange-300"
+                  className="h-14 px-6 bg-white/80 backdrop-blur-sm border-white/30 hover:border-amber-400 rounded-2xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl focus:ring-2 focus:ring-amber-300"
                   variant="outline"
                 >
                   <Filter className="h-5 w-5 mr-2" />
@@ -259,7 +230,7 @@ export default function ServicesFeed() {
                 
                 <Button 
                   onClick={() => setViewMode((v) => (v === "grid" ? "list" : "grid"))}
-                  className="h-14 px-4 bg-white/80 backdrop-blur-sm border-white/30 hover:border-orange-400 rounded-2xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl focus:ring-2 focus:ring-orange-300"
+                  className="h-14 px-4 bg-white/80 backdrop-blur-sm border-white/30 hover:border-amber-400 rounded-2xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl focus:ring-2 focus:ring-amber-300"
                   variant="outline"
                 >
                   {viewMode === "grid" ? <List className="h-5 w-5" /> : <Grid3X3 className="h-5 w-5" />}
@@ -275,18 +246,18 @@ export default function ServicesFeed() {
           <div className="mb-8">
             <div className="flex items-center justify-between">
               <p className="text-lg text-slate-600">
-                {filtered.length === 0 ? "Nenhum serviço encontrado" : 
-                 `${filtered.length} serviço${filtered.length !== 1 ? 's' : ''} encontrado${filtered.length !== 1 ? 's' : ''}`}
+                {filtered.length === 0 ? "Nenhuma demanda encontrada" : 
+                 `${filtered.length} demanda${filtered.length !== 1 ? 's' : ''} encontrada${filtered.length !== 1 ? 's' : ''}`}
               </p>
               {searchTerm && (
-                <Badge className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full transition-all duration-200 hover:scale-105 hover:shadow-md">
+                <Badge className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full transition-all duration-200 hover:scale-105 hover:shadow-md">
                   Buscando por: "{searchTerm}"
                 </Badge>
               )}
             </div>
           </div>
 
-          {/* Services Grid/List */}
+          {/* Demands Grid/List */}
           <div
             className={`transition-all duration-500 ease-in-out ${
               viewMode === "grid"
@@ -294,10 +265,10 @@ export default function ServicesFeed() {
                 : "space-y-6"
             }`}
           >
-            {pageItems.map((svc, index) => (
+            {pageItems.map((demand, index) => (
               <Card 
-                key={svc.id_serviceFreelancer} 
-                className={`group relative overflow-hidden bg-white/80 backdrop-blur-sm border-white/30 rounded-3xl shadow-lg hover:shadow-2xl hover:shadow-orange-100/50 transition-all duration-500 hover:-translate-y-2 hover:scale-[1.02] ${
+                key={demand.id_demand} 
+                className={`group relative overflow-hidden bg-white/80 backdrop-blur-sm border-white/30 rounded-3xl shadow-lg hover:shadow-2xl hover:shadow-amber-100/50 transition-all duration-500 hover:-translate-y-2 hover:scale-[1.02] ${
                   viewMode === "list" ? "flex flex-row" : ""
                 }`}
                 style={{ 
@@ -313,19 +284,19 @@ export default function ServicesFeed() {
                     <CardHeader className="pb-4 relative z-10">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
-                          <CardTitle className="text-xl font-bold text-slate-800 group-hover:text-orange-600 transition-colors duration-300 line-clamp-2 mb-3">
-                            {svc.title}
+                          <CardTitle className="text-xl font-bold text-slate-800 group-hover:text-amber-600 transition-colors duration-300 line-clamp-2 mb-3">
+                            {demand.title}
                           </CardTitle>
                           <div className="flex items-center space-x-2">
                             <CardDescription className="text-2xl font-bold text-green-600">
-                              R$ {svc.price.toLocaleString('pt-BR')}
+                              R$ {demand.price.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </CardDescription>
                           </div>
                         </div>
-                        {isNewService(svc.created_at) && (
+                        {isNewDemand(demand.created_at) && (
                           <Badge className="bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700 transition-all duration-200 hover:scale-105 hover:shadow-lg">
                             <Star className="h-3 w-3 mr-1" />
-                            Novo
+                            Nova
                           </Badge>
                         )}
                       </div>
@@ -333,41 +304,33 @@ export default function ServicesFeed() {
                     
                     <CardContent className="space-y-6 pb-6 relative z-10">
                       <p className="text-slate-600 line-clamp-3 leading-relaxed text-base">
-                        {svc.description}
+                        {demand.description}
                       </p>
                       
                       <div className="flex items-center space-x-4 p-4 bg-white/80 backdrop-blur-sm rounded-2xl border border-white/20 shadow-sm">
-                        <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-amber-600 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-lg hover:shadow-orange-300/50">
+                        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-lg hover:shadow-blue-300/50">
                           <User className="h-6 w-6 text-white" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-slate-800 truncate text-lg">{svc.userName}</p>
-                          <p className="text-sm text-slate-500 truncate">{svc.userEmail}</p>
+                          <p className="font-semibold text-slate-800 truncate text-lg">{demand.userName}</p>
+                          <p className="text-sm text-slate-500 truncate">{demand.userEmail}</p>
                         </div>
                       </div>
                       
                       <div className="flex items-center text-sm text-slate-500">
                         <Clock className="h-4 w-4 mr-2" />
-                        Publicado em {formatDate(svc.created_at)}
+                        Publicada em {formatDate(demand.created_at)}
                       </div>
                     </CardContent>
                     
                     <CardFooter className="flex justify-between pt-6 border-t border-white/20 relative z-10">
-                      <Link href={`/providers/${svc.id_provider}`}>
+                      <Link href={`/user/${demand.id_user}`}>
                         <Button 
                           size="lg" 
                           variant="outline"
-                          className="bg-white/80 backdrop-blur-sm border-white/30 hover:border-orange-400 hover:bg-orange-50/50 transition-all duration-300 rounded-xl hover:scale-105 hover:shadow-lg focus:ring-2 focus:ring-orange-300"
+                          className="bg-white/80 backdrop-blur-sm border-white/30 hover:border-amber-400 hover:bg-amber-50/50 transition-all duration-300 rounded-xl hover:scale-105 hover:shadow-lg focus:ring-2 focus:ring-amber-300"
                         >
-                          <User className="h-4 w-4 mr-2" />
-                          Ver Perfil
-                        </Button>
-                      </Link>
-                      <Link href={`/service/${svc.id_serviceFreelancer}`}>
-                        <Button 
-                          size="lg"
-                          className="bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-semibold shadow-lg rounded-xl transition-all duration-300 hover:scale-105 hover:shadow-xl hover:-translate-y-1 focus:ring-2 focus:ring-orange-300"
-                        >
+                          <Briefcase className="h-4 w-4 mr-2" />
                           Ver Detalhes
                         </Button>
                       </Link>
@@ -379,56 +342,57 @@ export default function ServicesFeed() {
                       <div className="flex items-start justify-between mb-6">
                         <div className="flex-1">
                           <div className="flex items-center space-x-3 mb-3">
-                            <h3 className="text-2xl font-bold text-slate-800 group-hover:text-orange-600 transition-colors duration-300">
-                              {svc.title}
+                            <h3 className="text-2xl font-bold text-slate-800 group-hover:text-blue-600 transition-colors duration-300">
+                              {demand.title}
                             </h3>
-                            {isNewService(svc.created_at) && (
+                            {isNewDemand(demand.created_at) && (
                               <Badge className="bg-gradient-to-r from-green-500 to-emerald-600 text-white transition-all duration-200 hover:scale-105 hover:shadow-lg">
                                 <Star className="h-3 w-3 mr-1" />
-                                Novo
+                                Nova
                               </Badge>
                             )}
                           </div>
                           <p className="text-slate-600 line-clamp-2 mb-6 text-lg leading-relaxed">
-                            {svc.description}
+                            {demand.description}
                           </p>
                           <div className="flex items-center space-x-6">
                             <div className="flex items-center space-x-2">
                               <DollarSign className="h-5 w-5 text-green-600" />
                               <span className="text-2xl font-bold text-green-600">
-                                R$ {svc.price.toLocaleString('pt-BR')}
+                                R$ {demand.price.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </span>
                             </div>
                             <div className="flex items-center space-x-3">
-                              <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-amber-600 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-lg hover:shadow-orange-300/50">
+                              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-lg hover:shadow-blue-300/50">
                                 <User className="h-5 w-5 text-white" />
                               </div>
                               <div>
-                                <span className="font-semibold text-slate-700">{svc.userName}</span>
-                                <p className="text-sm text-slate-500">{svc.userEmail}</p>
+                                <span className="font-semibold text-slate-700">{demand.userName}</span>
+                                <p className="text-sm text-slate-500">{demand.userEmail}</p>
                               </div>
                             </div>
                             <div className="flex items-center space-x-2 text-slate-500">
                               <Clock className="h-4 w-4" />
-                              <span>{formatDate(svc.created_at)}</span>
+                              <span>{formatDate(demand.created_at)}</span>
                             </div>
                           </div>
                         </div>
                         <div className="flex space-x-3 ml-6">
-                          <Link href={`/providers/${svc.id_provider}`}>
+                          <Link href={`/users/${demand.id_user}`}>
                             <Button 
                               size="lg" 
                               variant="outline"
-                              className="bg-white/80 backdrop-blur-sm border-white/30 hover:border-orange-400 hover:bg-orange-50/50 transition-all duration-300 rounded-xl hover:scale-105 hover:shadow-lg focus:ring-2 focus:ring-orange-300"
+                              className="bg-white/80 backdrop-blur-sm border-white/30 hover:border-amber-400 hover:bg-amber-50/50 transition-all duration-300 rounded-xl hover:scale-105 hover:shadow-lg focus:ring-2 focus:ring-amber-300"
                             >
-                              Ver Perfil
+                              Ver Contratante
                             </Button>
                           </Link>
-                          <Link href={`/service/${svc.id_serviceFreelancer}`}>
+                          <Link href={`/demand/${demand.id_demand}`}>
                             <Button 
                               size="lg"
-                              className="bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-semibold shadow-lg rounded-xl transition-all duration-300 hover:scale-105 hover:shadow-xl hover:-translate-y-1 focus:ring-2 focus:ring-orange-300"
+                              className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-semibold shadow-lg rounded-xl transition-all duration-300 hover:scale-105 hover:shadow-xl hover:-translate-y-1 focus:ring-2 focus:ring-amber-300"
                             >
+                              <Briefcase className="h-4 w-4 mr-2" />
                               Ver Detalhes
                             </Button>
                           </Link>
@@ -445,23 +409,24 @@ export default function ServicesFeed() {
           {pageItems.length === 0 && (
             <div className="text-center py-20">
               <div className="bg-white/80 backdrop-blur-sm p-12 rounded-3xl max-w-md mx-auto shadow-xl border border-white/20">
-                <div className="w-32 h-32 bg-gradient-to-br from-orange-100 to-amber-200 rounded-full flex items-center justify-center mx-auto mb-8">
-                  <Search className="h-16 w-16 text-orange-400" />
+                <div className="w-32 h-32 bg-gradient-to-br from-blue-100 to-indigo-200 rounded-full flex items-center justify-center mx-auto mb-8">
+                  <Search className="h-16 w-16 text-blue-400" />
                 </div>
-                <h3 className="text-2xl font-bold text-slate-700 mb-4">Nenhum serviço encontrado</h3>
+                <h3 className="text-2xl font-bold text-slate-700 mb-4">Nenhuma demanda encontrada</h3>
                 <p className="text-slate-500 mb-8 leading-relaxed">
-                  Não encontramos serviços que correspondam aos seus critérios de busca. 
+                  Não encontramos demandas que correspondam aos seus critérios de busca. 
                   Tente ajustar os filtros ou usar termos diferentes.
                 </p>
                 <Button 
                   onClick={() => {
                     setSearchTerm("");
-                    setSortBy("newest");
-                    setPage(1);
-                  }}
-                  className="bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-semibold px-8 py-3 rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl hover:-translate-y-1"
-                >
-                  Limpar filtros
+                    setSortBy("newest") 
+                  }}>
+                  </Button>
+                    <Button 
+                onClick={() => window.location.reload()} 
+                className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-medium px-6 py-2 rounded-xl shadow-lg transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
+                Limpar filtros
                 </Button>
               </div>
             </div>
@@ -475,7 +440,7 @@ export default function ServicesFeed() {
                 onClick={() => setPage((p) => p - 1)}
                 variant="outline"
                 size="lg"
-                className="bg-white/80 backdrop-blur-sm border-white/30 hover:border-orange-400 rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed focus:ring-2 focus:ring-orange-300"
+                className="bg-white/80 backdrop-blur-sm border-white/30 hover:border-blue-400 rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed focus:ring-2 focus:ring-blue-300"
               >
                 <ChevronLeft className="h-5 w-5" />
               </Button>
@@ -500,8 +465,8 @@ export default function ServicesFeed() {
                       size="lg"
                       onClick={() => setPage(pageNum)}
                       className={pageNum === page 
-                        ? "bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-semibold shadow-lg rounded-xl transition-all duration-300 hover:scale-105 hover:shadow-xl" 
-                        : "bg-white/80 backdrop-blur-sm border-white/30 hover:border-orange-400 transition-all duration-300 hover:scale-105 rounded-xl hover:shadow-lg focus:ring-2 focus:ring-orange-300"
+                        ? "bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-semibold shadow-lg rounded-xl transition-all duration-300 hover:scale-105 hover:shadow-xl" 
+                        : "bg-white/80 backdrop-blur-sm border-white/30 hover:border-amber-400 transition-all duration-300 hover:scale-105 rounded-xl hover:shadow-lg focus:ring-2 focus:ring-amber-300"
                       }
                     >
                       {pageNum}
@@ -515,7 +480,7 @@ export default function ServicesFeed() {
                 onClick={() => setPage((p) => p + 1)}
                 variant="outline"
                 size="lg"
-                className="bg-white/80 backdrop-blur-sm border-white/30 hover:border-orange-400 rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed focus:ring-2 focus:ring-orange-300"
+                className="bg-white/80 backdrop-blur-sm border-white/30 hover:border-blue-400 rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed focus:ring-2 focus:ring-blue-300"
               >
                 <ChevronRight className="h-5 w-5" />
               </Button>
@@ -526,3 +491,4 @@ export default function ServicesFeed() {
     </ApplicationLayout>
   );
 }
+

@@ -97,9 +97,9 @@ const Navbar = () => {
               <Newspaper className="w-4 h-4" /> Serviços 
             </div>
           </Link>
-          <Link href="/home/gallery">
+          <Link href="/home/demands">
             <div className="flex items-center gap-1 text-sm text-gray-700 hover:text-amber-500">
-              <Image className="w-4 h-4" /> Projetos
+              <Image className="w-4 h-4" /> Demandas  
             </div>
           </Link>
           <Link href="/home/products">

@@ -107,7 +107,7 @@ export const AuthModals: React.FC<{
         email: d.email,
         password: d.password,
         cpf: d.cpf,
-        cnpj: d.cnpj,
+        cnpj: d.cnpj, // tme que ser opcional
         cidade_id: 1,     // workaround por enquanto
         type: d.type,
         termos_aceitos: d.termos_aceitos,

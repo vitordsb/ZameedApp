@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import DemandsManager from "@/components/DemandsManager";
 import {
   Loader2,
   Edit2,
@@ -32,11 +33,12 @@ import {
 
 type FieldKey =
   | "name"
+  | "about"
   | "cpf"
   | "cnpj"
   | "endereco"
   | "experience"
-  | "about";
+  | "profession"
 
 interface Service {
   id_serviceFreelancer: number;
@@ -46,6 +48,17 @@ interface Service {
   price: string; // vem como string "180.00"
   createdAt: string;
   updatedAt: string;
+}
+
+interface Provider {
+  provider_id: number;
+  user_id: number;
+  profession: string;
+  views_profile: number;
+  about: string | null;
+  rating_mid: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export default function Profile() {
@@ -133,14 +146,27 @@ export default function Profile() {
         icon: Star,
       },
     ];
-    // "Sobre mim"
-    base.push({
-      key: "about" as const,
-      label: "Sobre Mim",
-      value: (user as any).about || "Conte um pouco sobre você...",
-      editable: true,
-      icon: User,
-    });
+
+    // Adiciona campos específicos para prestadores
+    if (user.type === "prestador") {
+      base.push(
+        {
+          key: "profession" as FieldKey,
+          label: "Profissão",
+          value: (user as any).profession || "Não informado",
+          editable: true,
+          icon: Briefcase,
+        },
+        {
+          key: "about" as FieldKey,
+          label: "Sobre Mim",
+          value: (user as any).about || "Conte um pouco sobre você...",
+          editable: true,
+          icon: User,
+        }
+      );
+    }
+
     return base;
   }, [user]);
 
@@ -174,15 +200,27 @@ export default function Profile() {
     setEditingField(key);
     setDraftValue(current === "Não informado" || current === "Conte um pouco sobre você..." ? "" : current);
   };
+  
   const cancelEditField = () => {
     setEditingField(null);
   };
+  
   const saveField = async () => {
     if (!editingField || !user) return;
     try {
-      await apiRequest("PUT", `/users/${user.id}`, {
-        [editingField]: draftValue,
-      });
+      // Para campos de usuário (profession e about), usa o endpoint de usuários
+      if (editingField === "profession" || editingField === "about") {
+        const payload: any = {};
+        payload[editingField] = draftValue;
+        
+        await apiRequest("PUT", `/users/${user.id}`, payload);
+      } else {
+        // Para outros campos, usa o endpoint de providers
+        await apiRequest("PUT", `/providers/${user.id}`, {
+          [editingField]: draftValue,
+        });
+      }
+      
       toast({ title: "Sucesso", description: "Perfil atualizado com sucesso!" });
       window.location.reload();
     } catch (err: any) {
@@ -313,7 +351,7 @@ export default function Profile() {
                   <h1 className="text-3xl md:text-4xl font-bold mb-2">{user.name}</h1>
                   <div className="flex flex-wrap gap-2 justify-center md:justify-start mb-4">
                     <Badge variant="secondary" className="bg-white/20 text-white border-white/30">
-                      {user.type === "prestador" ? "Prestador de Serviços" : "Cliente"}
+                      {user.type === "prestador" ? "Prestador de Serviços" : "Contratante"}
                     </Badge>
                     <Badge variant="secondary" className="bg-white/20 text-white border-white/30">
                       <Calendar className="w-3 h-3 mr-1" />
@@ -444,7 +482,7 @@ export default function Profile() {
                     {user.type === "prestador" ? services.length : "0"}
                   </div>
                   <div className="text-sm text-slate-600">
-                    {user.type === "prestador" ? "Serviços Ativos" : "Projetos"}
+                    {user.type === "prestador" ? "Serviços Ativos" : "Demandas Ativas"}
                   </div>
                 </div>
                 
@@ -461,6 +499,9 @@ export default function Profile() {
             </Card>
           </div>
         </div>
+
+        {/* Demandas do contratante */}
+        {user.type === "contratante" && <DemandsManager />}
 
         {/* Serviços do freelancer */}
         {user.type === "prestador" && (

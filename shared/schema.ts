@@ -88,6 +88,7 @@ export const insertServiceFreelancerSchema = createInsertSchema(serviceFreelance
 
 // ---------- Type Exports ----------
 export type User = typeof users.$inferSelect;
+export type Provider = typeof providers.$inferSelect;
 export type NewUser = z.infer<typeof insertUserSchema>;
 export type LoginUser = z.infer<typeof loginUserSchema>;
 export type ServiceProvider = typeof providers.$inferSelect;

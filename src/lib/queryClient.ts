@@ -1,62 +1,36 @@
-import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 
 export const API_BASE_URL = "https://zameed-backend.onrender.com";
 
 export async function apiRequest(
   method: string,
-  url: string,
-  data?: unknown | undefined,
+  path: string,
+  data?: unknown
 ): Promise<Response> {
-  const finalUrl = url.startsWith("https")
-    ? url
-    : API_BASE_URL + url;
+  const url = API_BASE_URL + path;
 
   const token = sessionStorage.getItem("token");
-  const res = await fetch(finalUrl, {
+
+  const headers: Record<string,string> = data ? { "Content-Type": "application/json" } : {};
+  
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` } : {},
+    headers,
     body: data ? JSON.stringify(data) : undefined,
   });
-
-  return res;
-}
-
-type UnauthorizedBehavior = "returnNull" | "throw";
-
-export const getQueryFn: <T>(options: {
-  on401: UnauthorizedBehavior;
-}) => QueryFunction<T> =
-  ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
-    const url = queryKey[0] as string;
-    const finalUrl = url.startsWith("https") ? url : API_BASE_URL + url;
-
-    const res = await fetch(finalUrl, {
-    });
-
-    if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      return null;
-    }
-
-    return await res.json();
-  };
-
-export const Logout = () => {
-  sessionStorage.removeItem("token");
-  sessionStorage.removeItem("tokenExpiry");
 }
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      queryFn: getQueryFn({ on401: "throw" }),
-      refetchInterval: false,
-      refetchOnWindowFocus: false,
-      staleTime: Infinity,
+      staleTime: 5 * 60 * 1000,
       retry: false,
+      refetchOnWindowFocus: false,
     },
     mutations: {
       retry: false,
     },
   },
 });
-

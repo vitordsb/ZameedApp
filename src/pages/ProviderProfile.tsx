@@ -1,21 +1,42 @@
 
-import React from "react";
+// src/pages/ProviderProfile.tsx
+import React, { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
+import AplicationLayout from "@/components/layouts/ApplicationLayout";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { motion } from "framer-motion";
-import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
+import {
+  Card,
+  CardHeader,
+  CardContent,
+  CardTitle,
+  CardFooter,
+} from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Star, MapPin, Briefcase, Eye, MessageCircle, ArrowLeft } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import {
+  Star,
+  Eye,
+  Calendar,
+  Briefcase,
+  User,
+  DollarSign,
+  CheckCircle,
+  MessageCircle,
+  ArrowLeft,
+  Heart,
+  Share2,
+  Mail,
+  MapPin,
+  Clock,
+  Award,
+  TrendingUp,
+  Phone,
+} from "lucide-react";
 
-interface ProviderEnvelope {
-  code: number;
-  provider: ProviderApi;
-  message: string;
-  success: boolean;
-}
 export interface ProviderApi {
   provider_id: number;
   user_id: number;
@@ -24,175 +45,466 @@ export interface ProviderApi {
   about: string | null;
   rating_mid: string;
   created_at: string;
-  updated_at: string;
 }
 
-interface UserEnvelope {
-  code: number;
-  user: UserApi;
-  message: string;
-  success: boolean;
-}
 export interface UserApi {
   id: number;
   name: string;
   email: string;
   createdAt: string;
-  updatedAt: string;
-  // …demais campos
+}
+
+export interface Service {
+  id_serviceFreelancer: number;
+  id_provider: number;
+  title: string;
+  description: string;
+  price: string;
+  created_at: string;
 }
 
 export default function ProviderProfile() {
-  const { provider_id} = useParams<{ provider_id: string }>();
+  const { provider_id } = useParams<{ provider_id: string }>();
   const [, setLocation] = useLocation();
+  const viewed = useRef(false);
 
-  const { data: provEnv, isLoading: loadingProv, isError: errProv } = useQuery<ProviderEnvelope>({
+  // 1) Provider
+  const { data: provEnv } = useQuery<{ provider: ProviderApi }>({
     queryKey: ["provider", provider_id],
     enabled: !!provider_id,
     queryFn: async () => {
-      const res = await apiRequest("GET", `/providers/${userId}`);
-      if (!res.ok) throw new Error(`Provider não encontrado (${res.status})`);
+      const res = await apiRequest("GET", `/providers/${provider_id}`);
+      if (!res.ok) throw new Error("Provider não encontrado");
       return res.json();
     },
   });
   const provider = provEnv?.provider;
-  const providerUserId = provider?.user_id?.toString();
 
-  const { data: userEnv, isLoading: loadingUser, isError: errUser } = useQuery<UserEnvelope>({
-    queryKey: ["user", providerUserId],
-    enabled: !!providerUserId,
+  // 2) User
+  const userId = provider?.user_id.toString();
+  const { data: userEnv } = useQuery<{ user: UserApi }>({
+    queryKey: ["user", userId],
+    enabled: !!userId,
     queryFn: async () => {
-      const res = await apiRequest("GET", `/users/${providerUserId}`);
-      if (!res.ok) throw new Error(`Usuário não encontrado (${res.status})`);
+      const res = await apiRequest("GET", `/users/${userId}`);
+      if (!res.ok) throw new Error("Usuário não encontrado");
       return res.json();
     },
   });
   const user = userEnv?.user;
 
-  if (loadingProv || loadingUser) {
+  // 3) Incrementa view apenas uma vez
+  useEffect(() => {
+    if (
+      provider &&
+      sessionStorage.getItem("token") && // usuário logado
+      user?.id !== provider.user_id &&
+      !viewed.current
+    ) {
+      apiRequest("PATCH", `/providers/addview/${provider.provider_id}`).catch(console.error);
+      viewed.current = true;
+    }
+  }, [provider, user]);
+
+  // 4) Carrega e filtra serviços
+  const [services, setServices] = useState<Service[]>([]);
+  const [loadingSv, setLoadingSv] = useState(true);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiRequest("GET", "/servicesfreelancer/getall");
+        const body = await res.json();
+        setServices(
+          (body.servicesFreelancer as Service[]).filter(
+            (s) => String(s.id_provider) === provider_id
+          )
+        );
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoadingSv(false);
+      }
+    })();
+  }, [provider_id]);
+
+  if (!provider || !user) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <Button variant="ghost" disabled>
-          Carregando...
-        </Button>
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 flex items-center justify-center">
+        <div className="text-center space-y-6 bg-white/80 backdrop-blur-sm p-8 rounded-3xl border border-white/20 shadow-xl">
+          <div className="w-20 h-20 bg-gradient-to-br from-orange-100 to-amber-200 rounded-full flex items-center justify-center mx-auto">
+            <User className="h-10 w-10 text-orange-500" />
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-xl font-semibold text-slate-700">Perfil não encontrado</h3>
+            <p className="text-slate-500">O perfil que você está procurando não existe ou foi removido.</p>
+          </div>
+          <Button 
+            onClick={() => setLocation("/home")}
+            className="bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-semibold px-6 py-2 rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Voltar ao Início
+          </Button>
+        </div>
       </div>
     );
   }
-  if (errProv || errUser || !provider || !user) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <p className="text-red-600">Erro ao carregar perfil.</p>
-      </div>
-    );
-  }
+
+  const getInitials = (n: string) =>
+    n
+      .split(" ")
+      .map((w) => w[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
+  
+  const getSince = (d: string) => {
+    const diff = Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
+    if (diff < 30) return `${diff} dias`;
+    if (diff < 365) return `${Math.floor(diff / 30)} meses`;
+    return `${Math.floor(diff / 365)} anos`;
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric'
+    });
+  };
+
+  const getRatingColor = (rating: string) => {
+    const num = parseFloat(rating);
+    if (num >= 4.5) return "text-green-600";
+    if (num >= 3.5) return "text-yellow-600";
+    return "text-orange-600";
+  };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.5 }}
-      className="max-w-4xl mx-auto p-6 space-y-6"
-    >
-      {/* Perfil Header */}
-      <Card className="overflow-hidden">
-        <div className="bg-gradient-to-r from-amber-700 to-amber-500 p-6 text-white flex flex-col md:flex-row items-center gap-6">
-          <Avatar className="w-24 h-24 ring-4 ring-white">
-            <AvatarFallback className="bg-amber-300 text-white text-3xl font-semibold">
-              {user.name.charAt(0).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-          <div>
-            <h1 className="text-3xl font-bold">{user.name}</h1>
-            <p className="text-sm opacity-80 mb-2">{user.email}</p>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge className="bg-white/20 text-white px-3 py-1">{provider.profession}</Badge>
-              <Badge className="bg-white/20 text-white px-3 py-1 flex items-center gap-1">
-                <Star className="w-4 h-4" /> {provider.rating_mid}
-              </Badge>
+    <AplicationLayout>
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 scroll-smooth">
+      <motion.div
+        className="max-w-6xl mx-auto px-6 py-8 space-y-8"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+      >
+        {/* HEADER HERO SECTION */}
+        <Card className="relative overflow-hidden shadow-2xl border-0 rounded-3xl">
+          {/* Background com gradiente laranja */}
+          <div className="absolute inset-0 bg-gradient-to-br from-orange-600 via-amber-600 to-yellow-500" />
+          <div className="absolute inset-0 bg-black/10" />
+          
+          {/* Padrão decorativo */}
+          <div className="absolute inset-0 opacity-10">
+            <div className="absolute top-0 right-0 w-96 h-96 bg-white rounded-full -translate-y-48 translate-x-48"></div>
+            <div className="absolute bottom-0 left-0 w-64 h-64 bg-white rounded-full translate-y-32 -translate-x-32"></div>
+          </div>
+
+          <CardContent className="relative p-8 lg:p-12 text-white">
+            <div className="flex flex-col lg:flex-row items-center lg:items-start gap-8">
+              {/* Avatar */}
+              <motion.div
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 0.2, duration: 0.5 }}
+                className="relative"
+              >
+                <Avatar className="w-40 h-40 border-4 border-white shadow-2xl">
+                  <AvatarFallback className="bg-white/20 backdrop-blur-sm text-white text-5xl font-bold">
+                    {getInitials(user.name)}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="absolute -bottom-2 -right-2 w-12 h-12 bg-green-500 rounded-full border-4 border-white flex items-center justify-center">
+                  <CheckCircle className="w-6 h-6 text-white" />
+                </div>
+              </motion.div>
+
+              {/* Informações principais */}
+              <div className="flex-1 text-center lg:text-left space-y-4">
+                <motion.div
+                  initial={{ x: -20, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ delay: 0.3, duration: 0.5 }}
+                >
+                  <h1 className="text-4xl lg:text-5xl font-bold mb-2">{user.name}</h1>
+                  <p className="text-xl lg:text-2xl text-white/90 font-medium">{provider.profession}</p>
+                </motion.div>
+
+                {/* Badges de estatísticas */}
+                <motion.div
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.4, duration: 0.5 }}
+                  className="flex flex-wrap justify-center lg:justify-start gap-3"
+                >
+                  <Badge className="bg-white/20 backdrop-blur-sm text-white border-white/30 px-4 py-2 text-sm font-medium hover:bg-white/30 transition-all duration-300">
+                    <Star className="w-4 h-4 mr-2 fill-current" />
+                    {provider.rating_mid} estrelas
+                  </Badge>
+                  <Badge className="bg-white/20 backdrop-blur-sm text-white border-white/30 px-4 py-2 text-sm font-medium hover:bg-white/30 transition-all duration-300">
+                    <Eye className="w-4 h-4 mr-2" />
+                    {provider.views_profile} visualizações
+                  </Badge>
+                  <Badge className="bg-white/20 backdrop-blur-sm text-white border-white/30 px-4 py-2 text-sm font-medium hover:bg-white/30 transition-all duration-300">
+                    <Calendar className="w-4 h-4 mr-2" />
+                    Desde {formatDate(user.createdAt)}
+                  </Badge>
+                  <Badge className="bg-white/20 backdrop-blur-sm text-white border-white/30 px-4 py-2 text-sm font-medium hover:bg-white/30 transition-all duration-300">
+                    <Briefcase className="w-4 h-4 mr-2" />
+                    {services.length} serviços
+                  </Badge>
+                </motion.div>
+
+                {/* Botões de ação rápida */}
+                <motion.div
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.5, duration: 0.5 }}
+                  className="flex flex-wrap justify-center lg:justify-start gap-3 pt-4"
+                >
+                  <Button
+                    onClick={() => setLocation(`/messages?userId=${user.id}`)}
+                    className="bg-white text-orange-600 hover:bg-white/90 font-semibold px-6 py-2 rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl"
+                  >
+                    <MessageCircle className="w-4 h-4 mr-2" />
+                    Enviar Mensagem
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="border-white text-orange-600 hover:bg-white hover:text-orange-600 font-semibold px-6 py-2 rounded-xl transition-all duration-300 hover:scale-105"
+                  >
+                    <Heart className="w-4 h-4 mr-2" />
+                    Favoritar
+                  </Button>
+                </motion.div>
+              </div>
             </div>
-            <p className="mt-2 text-white text-sm opacity-70">
-              Membro desde: {new Date(user.createdAt).toLocaleDateString('pt-BR')}
-            </p>
+          </CardContent>
+        </Card>
+
+        <div className="grid lg:grid-cols-3 gap-8">
+          {/* Coluna principal */}
+          <div className="lg:col-span-2 space-y-8">
+            {/* Sobre mim */}
+            <motion.div
+              initial={{ x: -20, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ delay: 0.6, duration: 0.5 }}
+            >
+              <Card className="shadow-xl border-0 rounded-3xl bg-white/80 backdrop-blur-sm">
+                <CardHeader className="pb-4">
+                  <CardTitle className="flex items-center gap-3 text-2xl">
+                    <div className="p-2 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl">
+                      <User className="w-6 h-6 text-white" />
+                    </div>
+                    Sobre Mim
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="prose prose-lg max-w-none">
+                    <p className="text-slate-700 leading-relaxed text-lg">
+                      {provider.about || "Este profissional ainda não adicionou uma descrição sobre si. Entre em contato para saber mais sobre seus serviços e experiência."}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Serviços */}
+            <motion.div
+              initial={{ x: -20, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ delay: 0.7, duration: 0.5 }}
+            >
+              <Card className="shadow-xl border-0 rounded-3xl bg-white/80 backdrop-blur-sm">
+                <CardHeader className="pb-4">
+                  <CardTitle className="flex items-center gap-3 text-2xl">
+                    <div className="p-2 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl">
+                      <Briefcase className="w-6 h-6 text-white" />
+                    </div>
+                    Serviços Oferecidos
+                    <Badge className="bg-orange-100 text-orange-700 ml-auto">
+                      {services.length} {services.length === 1 ? 'serviço' : 'serviços'}
+                    </Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {loadingSv ? (
+                    <div className="flex items-center justify-center py-12">
+                      <div className="animate-spin rounded-full h-12 w-12 border-4 border-orange-300 border-t-orange-600"></div>
+                    </div>
+                  ) : services.length === 0 ? (
+                    <div className="text-center py-12">
+                      <div className="w-24 h-24 bg-gradient-to-br from-orange-100 to-amber-200 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Briefcase className="h-12 w-12 text-orange-400" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-slate-700 mb-2">Nenhum serviço cadastrado</h3>
+                      <p className="text-slate-500">Este profissional ainda não cadastrou nenhum serviço.</p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-4">
+                      {services.map((s, index) => (
+                        <motion.div
+                          key={s.id_serviceFreelancer}
+                          initial={{ y: 20, opacity: 0 }}
+                          animate={{ y: 0, opacity: 1 }}
+                          transition={{ delay: 0.8 + index * 0.1, duration: 0.5 }}
+                        >
+                          <Card className="border border-white/30 hover:shadow-lg hover:shadow-orange-100/50 transition-all duration-300 hover:-translate-y-1 hover:scale-[1.02] bg-white/60 backdrop-blur-sm rounded-2xl">
+                            <CardContent className="p-6">
+                              <div className="flex justify-between items-start gap-4">
+                                <div className="flex-1">
+                                  <h3 className="font-bold text-xl text-slate-800 mb-2">{s.title}</h3>
+                                  <p className="text-slate-600 leading-relaxed mb-4">
+                                    {s.description}
+                                  </p>
+                                  <div className="flex items-center text-sm text-slate-500">
+                                    <Clock className="h-4 w-4 mr-1" />
+                                    Criado em {formatDate(s.created_at)}
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="flex items-center text-2xl font-bold text-green-600 mb-2">
+                                    <DollarSign className="h-6 w-6" />
+                                    {parseFloat(s.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </div>
+                                  <Button
+                                    size="sm"
+                                    className="bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-semibold rounded-xl transition-all duration-300 hover:scale-105"
+                                  >
+                                    Ver Detalhes
+                                  </Button>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </motion.div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          </div>
+
+          {/* Sidebar */}
+          <div className="space-y-6">
+            {/* Informações de contato */}
+            <motion.div
+              initial={{ x: 20, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ delay: 0.8, duration: 0.5 }}
+            >
+              <Card className="shadow-xl border-0 rounded-3xl bg-white/80 backdrop-blur-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-3">
+                    <div className="p-2 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl">
+                      <Mail className="w-5 h-5 text-white" />
+                    </div>
+                    Informações de Contato
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-xl">
+                    <Mail className="w-5 h-5 text-orange-600" />
+                    <span className="text-slate-700 font-medium">{user.email}</span>
+                  </div>
+                  <Separator className="bg-orange-100" />
+                  <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-xl">
+                    <Briefcase className="w-5 h-5 text-orange-600" />
+                    <span className="text-slate-700 font-medium">{provider.profession || "Sem descrição"}</span>
+                  </div>
+                  <Separator className="bg-orange-100" />
+                  <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-xl">
+                    <Calendar className="w-5 h-5 text-orange-600" />
+                    <div>
+                      <span className="text-slate-700 font-medium">Membro desde</span>
+                      <p className="text-sm text-slate-500">{formatDate(user.createdAt)}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Estatísticas */}
+            <motion.div
+              initial={{ x: 20, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ delay: 0.9, duration: 0.5 }}
+            >
+              <Card className="shadow-xl border-0 rounded-3xl bg-white/80 backdrop-blur-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-3">
+                    <div className="p-2 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl">
+                      <TrendingUp className="w-5 h-5 text-white" />
+                    </div>
+                    Estatísticas
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="text-center p-4 bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl">
+                      <div className={`text-2xl font-bold ${getRatingColor(provider.rating_mid)}`}>
+                        {provider.rating_mid}
+                      </div>
+                      <div className="text-sm text-slate-500">Avaliação</div>
+                    </div>
+                    <div className="text-center p-4 bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl">
+                      <div className="text-2xl font-bold text-blue-600">
+                        {provider.views_profile}
+                      </div>
+                      <div className="text-sm text-slate-500">Visualizações</div>
+                    </div>
+                  </div>
+                  <div className="text-center p-4 bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl">
+                    <div className="text-2xl font-bold text-green-600">
+                      {services.length}
+                    </div>
+                    <div className="text-sm text-slate-500">Serviços Ativos</div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Ações */}
+            <motion.div
+              initial={{ x: 20, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ delay: 1.0, duration: 0.5 }}
+            >
+              <Card className="shadow-xl border-0 rounded-3xl bg-white/80 backdrop-blur-sm">
+                <CardContent className="p-6 space-y-3">
+                  <Button
+                    className="w-full bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-semibold py-3 rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl"
+                    onClick={() => setLocation(`/messages?userId=${user.id}`)}
+                  >
+                    <MessageCircle className="w-5 h-5 mr-2" />
+                    Enviar Mensagem
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    className="w-full border-orange-300 text-orange-600 hover:bg-orange-50 font-semibold py-3 rounded-xl transition-all duration-300 hover:scale-105"
+                  >
+                    <Heart className="w-5 h-5 mr-2" /> 
+                    Favoritar Perfil
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full border-slate-300 text-slate-600 hover:bg-slate-50 font-semibold py-3 rounded-xl transition-all duration-300 hover:scale-105"
+                    onClick={() => setLocation("/home")}
+                  >
+                    <ArrowLeft className="w-5 h-5 mr-2" /> 
+                    Voltar ao Início
+                  </Button>
+                </CardContent>
+              </Card>
+            </motion.div>
           </div>
         </div>
-        <CardContent className="p-6">
-          <p className="text-gray-700 leading-relaxed">{provider.about ?? "Sem descrição disponível."}</p>
-        </CardContent>
-      </Card>
-
-      {/* Estatísticas e Detalhes */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Briefcase /> Profissão
-            </CardTitle>
-          </CardHeader>
-          <CardContent>{provider.profession}</CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MapPin /> Localização
-            </CardTitle>
-          </CardHeader>
-          <CardContent>—</CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Star /> Avaliações
-            </CardTitle>
-          </CardHeader>
-          <CardContent>{provider.rating_mid} ★ média</CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Eye /> Visualizações
-            </CardTitle>
-          </CardHeader>
-          <CardContent>{provider.views_profile} vezes</CardContent>
-        </Card>
-      </div>
-
-      {/* Metadata */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Detalhes Técnicos</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ul className="list-disc list-inside space-y-1 text-gray-700">
-            <li><strong>Provider ID:</strong> {provider.provider_id}</li>
-            <li><strong>User ID:</strong> {provider.user_id}</li>
-            <li><strong>Criado em:</strong> {new Date(provider.created_at).toLocaleDateString('pt-BR')}</li>
-            <li><strong>Atualizado em:</strong> {new Date(provider.updated_at).toLocaleDateString('pt-BR')}</li>
-          </ul>
-        </CardContent>
-      </Card>
-
-      {/* Ações */}
-      <Card>
-        <CardFooter className="flex justify-end gap-4">
-          <Button
-            variant="outline"
-            onClick={() => setLocation("/home")}
-            className="flex items-center gap-1"
-          >
-            <ArrowLeft className="w-4 h-4" /> Voltar
-          </Button>
-          <Button
-            onClick={() => setLocation(`/messages?userId=${user.id}`)}
-            className="flex items-center gap-1"
-          >
-            <MessageCircle className="w-4 h-4" /> Mensagem
-          </Button>
-        </CardFooter>
-      </Card>
-    </motion.div>
+      </motion.div>
+    </div>
+    </AplicationLayout> 
   );
 }
 

@@ -9,7 +9,7 @@ export default function ApplicationLayout({ children }: ApplicationLayoutProps) 
   return (
     <div className="flex flex-col min-h-screen">
       <Navbar />
-      <main className="flex-grow bg-gray-100 pt-10">
+      <main className="flex-grow pt-6">
         {children}
       </main>
     </div>

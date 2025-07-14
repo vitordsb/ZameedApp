@@ -1,7 +1,7 @@
 
 // src/pages/SocialFeed.tsx
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueries } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { motion } from "framer-motion";
 import ApplicationLayout from "@/components/layouts/ApplicationLayout";
@@ -33,31 +33,33 @@ import {
   Award,
 } from "lucide-react";
 import { apiRequest} from "@/lib/queryClient";
-import type { User } from "@shared/schema";
+import { useAuth } from "@/hooks/use-auth";
 
-// ==== Tipos das respostas ====
-
-interface RawProvider {
+interface Provider {
   provider_id: number;
   user_id: number;
   profession: string;
   views_profile: number;
   about: string | null;
-  rating_mid: number | string;
-  createdAt: string;
-  updatedAt: string;
+  rating_mid: number;
 }
+
 interface ProvidersResponse {
   code: number;
-  providers: RawProvider[];
+  providers: Provider[];
   message: string;
   success: boolean;
 }
-interface UsersResponse {
-  users: User[];
-}
 
-// ==== Dados estáticos para filtros ====
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  cpf: string;
+  cnpj?: string;
+  cidade_id: number;
+  type: "prestador" | "contratante";
+}
 
 const locations = [
   { label: "São Paulo", value: "sao-paulo" },
@@ -80,10 +82,10 @@ export default function SocialFeed() {
   const [locationFilter, setLocationFilter] = useState("");
   const [serviceFilter, setServiceFilter] = useState("");
   const [ratingFilter, setRatingFilter] = useState("");
+  const { user: currentUser } = useAuth();
 
-
-// 1) Busca lista de providers
-    const { data: provRes, isLoading: loadingProv, isError: errProv } =
+  // 1) Busca lista de providers
+  const { data: provRes, isLoading: loadingProv, isError: errProv } =
     useQuery<ProvidersResponse>({
       queryKey: ["providers"],
       queryFn: async () => {
@@ -94,60 +96,54 @@ export default function SocialFeed() {
       staleTime: 5 * 60 * 1000,
     });
 
-  // 2) Busca users
-  const { data: usersRes, isLoading: loadingUsers, isError: errUsers } =
-    useQuery<UsersResponse>({
-      queryKey: ["users"],
+  const providers = provRes?.providers ?? [];
+
+  // 2) Busca cada usuário associado
+  const userQueries = useQueries({
+    queries: providers.map((p) => ({
+      queryKey: ["user", p.user_id],
       queryFn: async () => {
-        const res = await apiRequest("GET", "/users");
-        if (!res.ok) throw new Error("Erro ao buscar usuários");
-        return res.json();
+        const r = await apiRequest("GET", `/users/${p.user_id}`);
+        if (!r.ok) throw new Error("Erro ao buscar usuário");
+        const body = await r.json();
+        return body.user as User;
       },
-      staleTime: 5 * 60 * 1000,
-    }); // DEBUG
-  
+    })),
+  });
+
+  const loadingUsers = userQueries.some((q) => q.isLoading);
+  const errUsers = userQueries.some((q) => q.isError);
+
   // 3) Combina providers + users
   const combined = useMemo(() => {
-    if (!provRes || !usersRes) return [];
-    return provRes.providers.map((provider) => {
-      const user =
-        usersRes.users.find((u) => u.id === provider.user_id) ||
-        ({
-          id: 0,
-          name: "–",
-          email: "–",
-          cpf: "",
-          type: "contratante",
-          password: "",
-          perfil_completo: false,
-          termos_aceitos: false,
-          is_email_verified: false,
-          createdAt: "",
-          updatedAt: "",
-          providers: [],
-        } as User);
-      return { provider, user };
-    });
-  }, [provRes, usersRes]);
+    if (loadingProv || loadingUsers) return [];
+    return providers
+      .map((provider) => {
+        const user = userQueries.find((q) => q.data?.id === provider.user_id)?.data;
+        return user ? { provider, user } : null;
+      })
+      .filter((x): x is { provider: Provider; user: User } => !!x);
+  }, [providers, userQueries, loadingProv, loadingUsers]);
 
-  // 4) Filtra apenas prestadores + aplica filtros
-  const list = useMemo(() => {
-    return combined
-      .filter(({ user }) => user.type === "prestador")
-      .filter(({ provider, user }) => {
-        const matchSearch =
-          user.name.toLowerCase().includes(search.toLowerCase()) ||
-          provider.profession.toLowerCase().includes(search.toLowerCase());
-        const matchService =
-          !serviceFilter || provider.profession === serviceFilter;
-        const matchRating =
-          !ratingFilter ||
-          Number(provider.rating_mid) >= Number(ratingFilter);
-        return matchSearch && matchService && matchRating;
-      });
-  }, [combined, search, serviceFilter, ratingFilter]);
+  // 4) Filtra apenas prestadores + aplica filtros de busca, serviço, avaliação
+  const list = useMemo(
+    () =>
+      combined
+        .filter(({ user }) => user.type === "prestador")
+        .filter(({ provider }) => provider.user_id !== currentUser?.id)
+        .filter(({ provider, user }) => {
+          const matchSearch =
+            user.name.toLowerCase().includes(search.toLowerCase()) ||
+            provider.profession.toLowerCase().includes(search.toLowerCase());
+          const matchService = !serviceFilter || provider.profession === serviceFilter;
+          const matchRating =
+            !ratingFilter || provider.rating_mid >= Number(ratingFilter);
+          return matchSearch && matchService && matchRating;
+        }),
+    [combined, search, serviceFilter, ratingFilter]
+  );
 
- if (loadingProv || loadingUsers) {
+  if (loadingProv || loadingUsers) {
     return (
       <ApplicationLayout>
         <div className="flex items-center justify-center min-h-screen">
@@ -168,58 +164,10 @@ export default function SocialFeed() {
       </ApplicationLayout>
     );
   }
+
   return (
     <ApplicationLayout>
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-amber-50 to-indigo-50">
-        {/* Hero */}
-        <div className="bg-gradient-to-r from-amber-900 via-amber-800 to-amber-900 text-white">
-          <div className="max-w-7xl mx-auto px-6 py-16 text-center">
-            <motion.h1
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6 }}
-              className="text-5xl md:text-6xl font-bold mb-6"
-            >
-              Encontre o <span className="text-amber-400">Arquiteto Ideal</span>
-              <br />
-              para o Seu Projeto
-            </motion.h1>
-            <motion.p
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.2 }}
-              className="text-xl md:text-2xl text-amber-100 mb-8 max-w-3xl mx-auto"
-            >
-              Conectamos você aos melhores talentos em arquitetura, de forma rápida
-              e segura. Mais de 500+ profissionais verificados prontos para
-              transformar suas ideias em realidade.
-            </motion.p>
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.4 }}
-              className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto"
-            >
-              <div className="text-center">
-                <Users className="w-8 h-8 text-amber-400 mx-auto mb-2" />
-                <span className="text-3xl font-bold">100+</span>
-                <p className="text-amber-200">Arquitetos Verificados</p>
-              </div>
-              <div className="text-center">
-                <TrendingUp className="w-8 h-8 text-amber-400 mx-auto mb-2" />
-                <span className="text-3xl font-bold">500+</span>
-                <p className="text-amber-200">Projetos Concluídos</p>
-              </div>
-              <div className="text-center">
-                <Shield className="w-8 h-8 text-amber-400 mx-auto mb-2" />
-                <span className="text-3xl font-bold">98%</span>
-                <p className="text-amber-200">Satisfação do Cliente</p>
-              </div>
-            </motion.div>
-          </div>
-        </div>
-
-        {/* Filtros */}
         <div className="max-w-7xl mx-auto px-6 py-12">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -336,84 +284,58 @@ export default function SocialFeed() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {list.map(({ provider, user }, idx) => (
-                  <motion.div
-                    key={provider.provider_id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4, delay: idx * 0.1 }}
-                    whileHover={{
-                      scale: 1.02,
-                      boxShadow: "0 20px 40px rgba(0,0,0,0.1)",
-                    }}
-                    className="group"
-                  >
-                    <Card className="overflow-hidden border-0 shadow-lg hover:shadow-2xl transition-all duration-300 bg-white">
-                      <CardHeader className="bg-amber-50 p-6">
-                        <div className="flex items-start gap-4">
-                          <div className="relative">
-                            <Avatar className="w-16 h-16 ring-4 ring-white shadow-lg">
-                              <AvatarFallback className="bg-gradient-to-br from-amber-500 to-amber-600 text-white text-lg font-semibold">
-                                {user.name.charAt(0).toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-green-500 rounded-full border-3 border-white flex items-center justify-center">
-                              <CheckCircle className="w-4 h-4 text-white" />
-                            </div>
-                          </div>
-                          <div className="flex-1">
-                            <CardTitle className="text-xl font-semibold text-gray-900 mb-1 group-hover:text-amber-600 transition-colors">
-                              {user.name}
-                            </CardTitle>
-                            <CardDescription className="text-gray-600 mb-2">
-                            ID do usuário: {provider.provider_id}
-                            </CardDescription>
-                            <CardDescription className="text-gray-600 mb-2">
-                              {user.email}
-                            </CardDescription>
-                          </div>
-                        </div>
-                      </CardHeader>
-
-                      <CardContent className="p-6 space-y-4">
-                        <div>
-                          <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                            <Briefcase className="w-4 h-4 text-amber-600" />
-                            Especialidade
-                          </h4>
-                          <p className="text-gray-700">
-                            {provider.profession || "Não informado"}
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-2 text-gray-600">
-                          <MapPin className="w-4 h-4" />
-                          {/* Aqui poderia entrar a cidade/estado */}
-                          Localização não disponível
-                        </div>
-
-                        <div className="flex gap-2 pt-2">
-                          <Link
-                            href={`/providers/${provider.provider_id}`}
-                            className="flex-1"
-                          >
-                            <Button className="w-full bg-amber-600 hover:bg-amber-700 text-white font-medium py-2.5 rounded-xl transition-all duration-200">
-                              Ver Perfil Completo
-                            </Button>
-                          </Link>
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="border-amber-200 text-amber-600 hover:bg-amber-50 rounded-xl"
-                          >
-                            <MessageCircle className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                ))}
-              </div>
+                {list.map(({ provider, user }) => (
+            <motion.div
+              key={provider.provider_id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="group"
+            >
+              <Card className="shadow-lg hover:shadow-2xl transition">
+                <CardHeader className="flex items-center gap-4 p-6 bg-amber-50">
+                  <Avatar className="w-16 h-16 ring-4 ring-white">
+                    <AvatarFallback>{user.name[0].toUpperCase()}</AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <CardTitle className="text-xl font-bold">{user.name}</CardTitle>
+                    <Badge className="mt-1 bg-amber-100 text-amber-800">
+                      {provider.profession}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6 space-y-3">
+                  <p>
+                    <strong>E-mail:</strong> {user.email}
+                  </p>
+                  {user.cnpj && (
+                    <p>
+                      <strong>CNPJ:</strong> {user.cnpj}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <Star className="w-4 h-4 text-amber-600" />{" "}
+                    {provider.rating_mid} 
+                  </div>
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <MapPin className="w-4 h-4" /> Cidade ID: {user.cidade_id}
+                  </div>
+                </CardContent>
+                <CardDescription className="px-6 pb-4 text-gray-700">
+                  {provider.about ?? "— sem descrição —"}
+                </CardDescription>
+                <div className="px-6 pb-6 flex gap-2">
+                  <Link href={`/providers/${provider.provider_id}`}>
+                    <Button className="flex-1 bg-amber-600 hover:bg-amber-700 text-white">
+                      Ver Perfil
+                    </Button>
+                  </Link>
+                  <Button variant="outline" size="icon">
+                    <MessageCircle className="w-5 h-5" />
+                  </Button>
+                </div>
+              </Card>
+            </motion.div>
+          ))}              </div>
             </section>
 
             {/* Sidebar */}

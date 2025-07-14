@@ -1,4 +1,3 @@
-
 // src/components/AuthModals.tsx
 import React, { useState } from "react";
 import { useForm } from "react-hook-form";
@@ -25,17 +24,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 
-// Tipos do formulário
-type LoginForm = {
-  email: string;
-  password: string;
-};
-
+type LoginForm = { email: string; password: string };
 type RegisterForm = {
   name: string;
   email: string;
   cpf: string;
-  cnpj?: string; // campo CNPJ opcional
+  cnpj?: string;
   type: "contratante" | "prestador";
   profession?: string;
   password: string;
@@ -43,15 +37,13 @@ type RegisterForm = {
   termos_aceitos: boolean;
 };
 
-interface AuthModalsProps {
+export const AuthModals: React.FC<{
   isLoginOpen: boolean;
   isRegisterOpen: boolean;
   onLoginClose: () => void;
   onRegisterClose: () => void;
   onAuthSuccess?: () => void;
-}
-
-export const AuthModals: React.FC<AuthModalsProps> = ({
+}> = ({
   isLoginOpen,
   isRegisterOpen,
   onLoginClose,
@@ -59,13 +51,11 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
   onAuthSuccess,
 }) => {
   const { toast } = useToast();
-  const { loginMutation, registerMutation } = useAuth();
+  const { login, registerUser } = useAuth();
   const [loginLoading, setLoginLoading] = useState(false);
   const [registerLoading, setRegisterLoading] = useState(false);
 
-  const loginForm = useForm<LoginForm>({
-    defaultValues: { email: "", password: "" },
-  });
+  const loginForm = useForm<LoginForm>({ defaultValues: { email: "", password: "" } });
   const registerForm = useForm<RegisterForm>({
     defaultValues: {
       name: "",
@@ -73,7 +63,6 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
       cpf: "",
       cnpj: "",
       type: "contratante",
-      profession: "",
       password: "",
       confirmPassword: "",
       termos_aceitos: false,
@@ -83,90 +72,78 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
   const selectedType = registerForm.watch("type");
   const fieldClasses = "w-full";
 
-  const handleLogin = async (data: LoginForm) => {
+  async function handleLogin(data: LoginForm) {
     setLoginLoading(true);
     try {
-      await loginMutation.mutateAsync(data);
+      await login(data);
       loginForm.reset();
       onLoginClose();
       onAuthSuccess?.();
     } catch (err) {
       toast({
         title: "Erro no login",
-        description:
-          (err as Error).message || "Não foi possível logar.",
+        description: (err as Error).message,
         variant: "destructive",
       });
     } finally {
       setLoginLoading(false);
     }
-  };
+  }
 
-  const handleRegister = async (data: RegisterForm) => {
-    if (data.password !== data.confirmPassword) {
-      toast({
-        title: "Erro no cadastro",
-        description: "Senhas não coincidem",
-        variant: "destructive",
-      });
+  async function handleRegister(d: RegisterForm) {
+    if (d.password !== d.confirmPassword) {
+      toast({ title: "Erro", description: "Senhas não coincidem", variant: "destructive" });
       return;
     }
-    if (selectedType === "prestador" && !data.profession?.trim()) {
-      toast({
-        title: "Erro no cadastro",
-        description: "Informe sua profissão",
-        variant: "destructive",
-      });
+    if (d.type === "prestador" && !d.profession?.trim()) {
+      toast({ title: "Erro", description: "Informe sua profissão", variant: "destructive" });
       return;
     }
+
     setRegisterLoading(true);
     try {
-      const { confirmPassword, ...payload } = data;
-      await registerMutation.mutateAsync(payload as any);
+      await registerUser({
+        name: d.name,
+        email: d.email,
+        password: d.password,
+        cpf: d.cpf,
+        cnpj: d.cnpj,
+        cidade_id: 1,     // workaround por enquanto
+        type: d.type,
+        termos_aceitos: d.termos_aceitos,
+      });
       registerForm.reset();
       onRegisterClose();
       onAuthSuccess?.();
     } catch (err) {
       toast({
         title: "Erro no cadastro",
-        description:
-          (err as Error).message || "Não foi possível cadastrar.",
+        description: (err as Error).message,
         variant: "destructive",
       });
     } finally {
       setRegisterLoading(false);
     }
-  };
-
+  }
   return (
     <>
       {/* Login Modal */}
       <Dialog open={isLoginOpen} onOpenChange={onLoginClose}>
-        <DialogContent className="max-w-md w-full p-8 bg-white rounded-lg shadow-xl">
-          <DialogHeader className="text-center mb-4">
-            <DialogTitle className="text-2xl font-bold">Login</DialogTitle>
-            <DialogDescription className="text-sm text-gray-500">
-              Entre com seu e-mail e senha para acessar.
-            </DialogDescription>
+        <DialogContent className="max-w-md p-8">
+          <DialogHeader>
+            <DialogTitle>Login</DialogTitle>
+            <DialogDescription>Entre com seu e-mail e senha.</DialogDescription>
           </DialogHeader>
           <Form {...loginForm}>
-            <form
-              onSubmit={loginForm.handleSubmit(handleLogin)}
-              className="space-y-6"
-            >
+            <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-4">
               <FormField
                 control={loginForm.control}
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="font-medium">E-mail</FormLabel>
+                    <FormLabel>E-mail</FormLabel>
                     <FormControl>
-                      <Input
-                        type="email"
-                        className={fieldClasses}
-                        placeholder="email@exemplo.com"
-                        {...field}
-                      />
+                      <Input type="email" {...field} className={fieldClasses} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -177,28 +154,17 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="font-medium">Senha</FormLabel>
+                    <FormLabel>Senha</FormLabel>
                     <FormControl>
-                      <Input
-                        type="password"
-                        className={fieldClasses}
-                        placeholder="••••••"
-                        {...field}
-                      />
+                      <Input type="password" {...field} className={fieldClasses} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              <DialogFooter className="pt-4">
-                <Button
-                  type="submit"
-                  disabled={loginLoading}
-                  className="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg"
-                >
-                  {loginLoading && (
-                    <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                  )}
+              <DialogFooter>
+                <Button type="submit" disabled={loginLoading} className="w-full">
+                  {loginLoading && <Loader2 className="animate-spin mr-2" />}
                   Entrar
                 </Button>
               </DialogFooter>
@@ -209,35 +175,22 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
 
       {/* Register Modal */}
       <Dialog open={isRegisterOpen} onOpenChange={onRegisterClose}>
-        <DialogContent className="max-w-lg w-full p-8 bg-white rounded-lg shadow-xl">
-          <DialogHeader className="text-center mb-4">
-            <DialogTitle className="text-2xl font-bold">Cadastro</DialogTitle>
-            <DialogDescription className="text-sm text-gray-500">
-              Preencha os campos abaixo para criar sua conta.
-            </DialogDescription>
+        <DialogContent className="max-w-lg p-8">
+          <DialogHeader>
+            <DialogTitle>Cadastro</DialogTitle>
+            <DialogDescription>Preencha para criar sua conta.</DialogDescription>
           </DialogHeader>
           <Form {...registerForm}>
-            <form
-              onSubmit={registerForm.handleSubmit(handleRegister)}
-              className="space-y-6"
-            >
-              {/* Nome e E-mail */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <form onSubmit={registerForm.handleSubmit(handleRegister)} className="space-y-4">
+              {/* Nome / E-mail */}
+              <div className="grid sm:grid-cols-2 gap-4">
                 <FormField
                   control={registerForm.control}
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="font-medium">
-                        Nome Completo
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          className={fieldClasses}
-                          placeholder="Seu nome"
-                          {...field}
-                        />
-                      </FormControl>
+                      <FormLabel>Nome Completo</FormLabel>
+                      <FormControl><Input {...field} className={fieldClasses} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -247,35 +200,22 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                   name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="font-medium">E-mail</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="email"
-                          className={fieldClasses}
-                          placeholder="email@exemplo.com"
-                          {...field}
-                        />
-                      </FormControl>
+                      <FormLabel>E-mail</FormLabel>
+                      <FormControl><Input type="email" {...field} className={fieldClasses} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
-              {/* CPF e CNPJ (opcional) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* CPF / CNPJ */}
+              <div className="grid sm:grid-cols-2 gap-4">
                 <FormField
                   control={registerForm.control}
                   name="cpf"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="font-medium">CPF</FormLabel>
-                      <FormControl>
-                        <Input
-                          className={fieldClasses}
-                          placeholder="12345678900"
-                          {...field}
-                        />
-                      </FormControl>
+                      <FormLabel>CPF</FormLabel>
+                      <FormControl><Input {...field} className={fieldClasses} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -285,36 +225,23 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                   name="cnpj"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="font-medium">
-                        CNPJ (opcional)
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          className={fieldClasses}
-                          placeholder="00.000.000/0000-00"
-                          {...field}
-                        />
-                      </FormControl>
+                      <FormLabel>CNPJ (opcional)</FormLabel>
+                      <FormControl><Input {...field} className={fieldClasses} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
-              {/* Tipo e Profissão */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Tipo / Profissão */}
+              <div className="grid sm:grid-cols-2 gap-4">
                 <FormField
                   control={registerForm.control}
                   name="type"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="font-medium">
-                        Tipo de Conta
-                      </FormLabel>
+                      <FormLabel>Tipo de Conta</FormLabel>
                       <FormControl>
-                        <select
-                          className="w-full border rounded-lg p-2"
-                          {...field}
-                        >
+                        <select {...field} className="w-full border p-2 rounded">
                           <option value="contratante">Contratante</option>
                           <option value="prestador">Prestador</option>
                         </select>
@@ -329,38 +256,23 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                     name="profession"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className="font-medium">
-                          Profissão
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            className={fieldClasses}
-                            placeholder="Sua profissão"
-                            {...field}
-                          />
-                        </FormControl>
+                        <FormLabel>Profissão</FormLabel>
+                        <FormControl><Input {...field} className={fieldClasses} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
                 )}
               </div>
-              {/* Senha e Confirmação */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Senha / Confirmar */}
+              <div className="grid sm:grid-cols-2 gap-4">
                 <FormField
                   control={registerForm.control}
                   name="password"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="font-medium">Senha</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="password"
-                          className={fieldClasses}
-                          placeholder="••••••"
-                          {...field}
-                        />
-                      </FormControl>
+                      <FormLabel>Senha</FormLabel>
+                      <FormControl><Input type="password" {...field} className={fieldClasses} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -370,50 +282,28 @@ export const AuthModals: React.FC<AuthModalsProps> = ({
                   name="confirmPassword"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="font-medium">
-                        Confirmar Senha
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          type="password"
-                          className={fieldClasses}
-                          placeholder="••••••"
-                          {...field}
-                        />
-                      </FormControl>
+                      <FormLabel>Confirmar Senha</FormLabel>
+                      <FormControl><Input type="password" {...field} className={fieldClasses} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
-              {/* Termos de Uso */}
+              {/* Termos */}
               <FormField
                 control={registerForm.control}
                 name="termos_aceitos"
                 render={({ field }) => (
                   <FormItem className="flex items-center space-x-2">
-                    <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                    Li e aceito os termos de uso.
-                    <FormLabel className="text-sm">
-                    </FormLabel>
+                    <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                    <span>Li e aceito os termos de uso.</span>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              <DialogFooter className="pt-4">
-                <Button
-                  type="submit"
-                  disabled={registerLoading}
-                  className="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg"
-                >
-                  {registerLoading && (
-                    <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                  )}
+              <DialogFooter>
+                <Button type="submit" disabled={registerLoading} className="w-full bg-amber-600">
+                  {registerLoading && <Loader2 className="animate-spin mr-2" />}
                   Cadastrar
                 </Button>
               </DialogFooter>

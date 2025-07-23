@@ -28,10 +28,11 @@ type LoginForm = { email: string; password: string };
 type RegisterForm = {
   name: string;
   email: string;
-  cpf: string;
-  cnpj?: string;
+  gender: string; // Obrigatório
+  birth: string; // Obrigatório
+  cpf?: string; // Opcional - será preenchido posteriormente
+  cnpj?: string; // Opcional - será preenchido posteriormente
   type: "contratante" | "prestador";
-  profession?: string;
   password: string;
   confirmPassword: string;
   termos_aceitos: boolean;
@@ -42,13 +43,17 @@ export const AuthModals: React.FC<{
   isRegisterOpen: boolean;
   onLoginClose: () => void;
   onRegisterClose: () => void;
-  onAuthSuccess?: () => void;
+  onSuccess?: () => void; // Renomeado de onAuthSuccess
+  onSwitchToRegister: () => void;
+  onSwitchToLogin: () => void;
 }> = ({
   isLoginOpen,
   isRegisterOpen,
   onLoginClose,
   onRegisterClose,
-  onAuthSuccess,
+  onSuccess,
+  onSwitchToRegister,
+  onSwitchToLogin,
 }) => {
   const { toast } = useToast();
   const { login, registerUser } = useAuth();
@@ -60,8 +65,8 @@ export const AuthModals: React.FC<{
     defaultValues: {
       name: "",
       email: "",
-      cpf: "",
-      cnpj: "",
+      gender: "",
+      birth: "",
       type: "contratante",
       password: "",
       confirmPassword: "",
@@ -72,13 +77,22 @@ export const AuthModals: React.FC<{
   const selectedType = registerForm.watch("type");
   const fieldClasses = "w-full";
 
+  // Estado para controlar o checkbox "Sou prestador"
+  const [isPrestador, setIsPrestador] = useState(false);
+
+  // Função para alterar o tipo baseado no checkbox
+  const handlePrestadorChange = (checked: boolean) => {
+    setIsPrestador(checked);
+    registerForm.setValue("type", checked ? "prestador" : "contratante");
+  };
+
   async function handleLogin(data: LoginForm) {
     setLoginLoading(true);
     try {
       await login(data);
       loginForm.reset();
       onLoginClose();
-      onAuthSuccess?.();
+      onSuccess?.();
     } catch (err) {
       toast({
         title: "Erro no login",
@@ -95,26 +109,25 @@ export const AuthModals: React.FC<{
       toast({ title: "Erro", description: "Senhas não coincidem", variant: "destructive" });
       return;
     }
-    if (d.type === "prestador" && !d.profession?.trim()) {
-      toast({ title: "Erro", description: "Informe sua profissão", variant: "destructive" });
-      return;
-    }
 
     setRegisterLoading(true);
     try {
-      await registerUser({
+      // Enviando os dados informados pelo usuário no cadastro
+      const registerData: any = {
         name: d.name,
         email: d.email,
         password: d.password,
-        cpf: d.cpf,
-        cnpj: d.cnpj, // tme que ser opcional
-        cidade_id: 1,     // workaround por enquanto
-        type: d.type,
+        gender: d.gender,
+        birth: d.birth,
+        type: isPrestador ? "prestador" : "contratante",
         termos_aceitos: d.termos_aceitos,
-      });
+      };
+      
+      await registerUser(registerData);
       registerForm.reset();
+      setIsPrestador(false); // Reset do estado do checkbox
       onRegisterClose();
-      onAuthSuccess?.();
+      onSuccess?.(); // Usar onSuccess em vez de onAuthSuccess
     } catch (err) {
       toast({
         title: "Erro no cadastro",
@@ -207,63 +220,56 @@ export const AuthModals: React.FC<{
                   )}
                 />
               </div>
-              {/* CPF / CNPJ */}
+
+              {/* Gênero / Data de Nascimento */}
               <div className="grid sm:grid-cols-2 gap-4">
                 <FormField
                   control={registerForm.control}
-                  name="cpf"
+                  name="gender"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>CPF</FormLabel>
-                      <FormControl><Input {...field} className={fieldClasses} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={registerForm.control}
-                  name="cnpj"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>CNPJ (opcional)</FormLabel>
-                      <FormControl><Input {...field} className={fieldClasses} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              {/* Tipo / Profissão */}
-              <div className="grid sm:grid-cols-2 gap-4">
-                <FormField
-                  control={registerForm.control}
-                  name="type"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Tipo de Conta</FormLabel>
+                      <FormLabel>Gênero</FormLabel>
                       <FormControl>
                         <select {...field} className="w-full border p-2 rounded">
-                          <option value="contratante">Contratante</option>
-                          <option value="prestador">Prestador</option>
+                          <option value="">Selecione...</option>
+                          <option value="Masculino">Masculino</option>
+                          <option value="Feminino">Feminino</option>
+                          <option value="Outro">Outro</option>
+                          <option value="Prefiro não informar">Prefiro não informar</option>
                         </select>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                {selectedType === "prestador" && (
-                  <FormField
-                    control={registerForm.control}
-                    name="profession"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Profissão</FormLabel>
-                        <FormControl><Input {...field} className={fieldClasses} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
+                <FormField
+                  control={registerForm.control}
+                  name="birth"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Data de Nascimento</FormLabel>
+                      <FormControl><Input type="date" {...field} className={fieldClasses} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
+                
+                {/* CAMPOS CPF E CNPJ REMOVIDOS - mas ainda serão enviados com valores padrão */}
+                
+                {/* Checkbox "Sou prestador" */}
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      checked={isPrestador} 
+                      onCheckedChange={handlePrestadorChange}
+                      id="sou-prestador"
+                    />
+                    <label htmlFor="sou-prestador" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                      Sou prestador
+                    </label>
+                  </div>
+                </div>
               {/* Senha / Confirmar */}
               <div className="grid sm:grid-cols-2 gap-4">
                 <FormField

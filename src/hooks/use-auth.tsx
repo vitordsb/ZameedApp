@@ -16,8 +16,11 @@ export interface User {
   id: number;
   name: string;
   email: string;
-  cpf: string;
+  cpf?: string;
+  birth: string;
+  gender: string;
   cnpj?: string;
+  provider_id?: number;
   cidade_id: number;
   type: "contratante" | "prestador";
   termos_aceitos: boolean;
@@ -28,9 +31,10 @@ export type RegisterPayload = {
   name: string;
   email: string;
   password: string;
-  cpf: string;
+  cpf?: string;
   cnpj?: string;
-  cidade_id: number;
+  gender: string;
+  birth: string;
   type: "contratante" | "prestador";
   termos_aceitos: boolean;
 };
@@ -45,7 +49,6 @@ export interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
-
 // Schemas de validação
 const loginSchema = z.object({
   email: z.string().email("Email inválido"),
@@ -55,9 +58,10 @@ const registerSchema = z.object({
   name: z.string().min(1, "Nome obrigatório"),
   email: z.string().email("Email inválido"),
   password: z.string().min(6, "Senha muito curta"),
-  cpf: z.string().min(11, "CPF inválido"),
+  cpf: z.string().min(11, "CPF inválido").optional(),
   cnpj: z.string().min(14).optional(),
-  cidade_id: z.number(),
+  gender: z.string(),
+  birth: z.string(),
   type: z.enum(["contratante", "prestador"]),
   termos_aceitos: z.literal(true, { errorMap: () => ({ message: "É preciso aceitar os termos" }) }),
 });
@@ -89,7 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!res.ok) throw new Error("Credenciais inválidas");
     const body = (await res.json()) as { data: { token: string } };
     const token = body.data.token;
-    const expiresAt = Date.now() + 1000 * 60 * 60;
+    const expiresAt = Date.now() + 10000 * 60 * 60; // 10h
     sessionStorage.setItem("token", token);
     sessionStorage.setItem("tokenExpiry", expiresAt.toString());
     const payload = parseJwt<User>(token);
@@ -99,13 +103,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const registerUser = async (data: RegisterPayload) => {
     registerSchema.parse(data);
-    const res = await apiRequest("POST", "/users", data);
-    const body = await res.json();
-    console.log(body)
-    if (!res.ok) {
-      throw new Error(body.message || "Erro ao cadastrar usuário");
+    
+    let userRegistrationPayload: any = { ...data };
+    // Remover campos específicos de prestador para o endpoint /users
+    delete userRegistrationPayload.profession;
+    delete userRegistrationPayload.about;
+    delete userRegistrationPayload.about;
+
+    // 1. Registrar o usuário no endpoint /users
+    console.log(`Registrando usuário no endpoint: /users`);
+    console.log("Dados enviados para /users:", userRegistrationPayload);
+
+    const userRes = await apiRequest("POST", "/users", userRegistrationPayload);
+    const userBody = await userRes.json();
+    console.log("Resposta da API (/users):", userBody);
+
+    if (!userRes.ok) {
+      throw new Error(userBody.message || "Erro ao cadastrar usuário");
     }
-    toast({ title: "Cadastro realizado", description: "Bem-vindo(a)!" });
+
+    const userId = userBody.user.id; // O ID do usuário está dentro do objeto 'user' na resposta
+
+    // Mensagem de sucesso personalizada baseada no tipo
+    const successMessage = data.type === "prestador" 
+      ? "Cadastro de prestador realizado com sucesso!" 
+      : "Cadastro realizado com sucesso!";
+    
+    toast({ 
+      title: "Cadastro realizado", 
+      description: successMessage 
+    });
   };
 
   const logout = async () => {
@@ -114,8 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     toast({ title: "Até mais!", description: "Você saiu da sua conta." });
   };
-
-  return (
+    return (
     <AuthContext.Provider
       value={{
         user,

@@ -1,6 +1,8 @@
+
 // src/pages/ServicesFeed.tsx
 import { useState, useEffect } from "react";
 import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import ApplicationLayout from "@/components/layouts/ApplicationLayout";
 import {
   Card,
@@ -28,94 +30,171 @@ import {
   Filter,
   TrendingUp,
   Award,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
+
+// Interfaces baseadas na estrutura real da API
+interface ServiceProvider {
+  provider_id: number;
+  user_id: number;
+  profession: string;
+  views_profile: number;
+  about: string | null;
+}
 
 interface ServiceFreelancer {
   id_serviceFreelancer: number;
   id_provider: number;
   title: string;
   description: string;
-  price: number;
-  created_at: string;
-  updated_at: string;
+  price: string; // A API retorna como string
+  createdAt: string;
+  updatedAt: string;
+  ServiceProvider: ServiceProvider;
 }
 
-interface Provider {
-  provider_id: number;
-  user_id: number;
+interface ServicesResponse {
+  code: number;
+  message: string;
+  servicesFreelancer: ServiceFreelancer[];
+  success: boolean;
 }
 
 interface User {
   id: number;
   name: string;
   email: string;
+  cpf?: string;
+  cnpj?: string;
+  cidade_id?: number;
+  type: "prestador" | "contratante";
+  gender?: string;
+  birth?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface UserResponse {
+  code: number;
+  message: string;
+  user: User;
+  success: boolean;
 }
 
 interface EnrichedService extends ServiceFreelancer {
   userName: string;
   userEmail: string;
+  userType: string;
 }
 
 export default function ServicesFeed() {
-  const [services, setServices] = useState<EnrichedService[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<"newest" | "priceAsc" | "priceDesc">("newest");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [page, setPage] = useState(1);
   const perPage = 6;
+  
+  // Hook para acessar dados do usuário logado
+  const { user: currentUser } = useAuth();
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const token = sessionStorage.getItem("token");
-        // 1) busca serviços
-        const srvRes = await fetch(
-          "https://zameed-backend.onrender.com/servicesfreelancer/getall",
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (!srvRes.ok) throw new Error("Erro ao buscar serviços");
-        const { servicesFreelancer } = await srvRes.json() as { servicesFreelancer: ServiceFreelancer[] };
-
-        // 2) busca providers
-        const provRes = await fetch("https://zameed-backend.onrender.com/providers", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!provRes.ok) throw new Error("Erro ao buscar prestadores");
-        const { providers } = await provRes.json() as { providers: Provider[] };
-        const provMap = new Map<number, Provider>();
-        providers.forEach(p => provMap.set(p.provider_id, p));
-
-        // 3) busca usuários
-        const usrRes = await fetch("https://zameed-backend.onrender.com/users", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!usrRes.ok) throw new Error("Erro ao buscar usuários");
-        const { users } = await usrRes.json() as { users: User[] };
-        const userMap = new Map<number, User>();
-        users.forEach(u => userMap.set(u.id, u));
-
-        // 4) enriquece serviços com nome/email
-        const enriched: EnrichedService[] = servicesFreelancer.map(s => {
-          const prov = provMap.get(s.id_provider)!;
-          const usr = userMap.get(prov.user_id)!;
-          return {
-            ...s,
-            userName: usr.name,
-            userEmail: usr.email,
-          };
-        });
-
-        setServices(enriched);
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
+  // Query para buscar todos os serviços
+  const { 
+    data: servicesData, 
+    isLoading: loadingServices, 
+    isError: errorServices,
+    error: servicesError
+  } = useQuery<ServicesResponse>({
+    queryKey: ["services-freelancer"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/servicesfreelancer/getall");
+      if (!res.ok) {
+        throw new Error(`Erro ao buscar serviços: ${res.status}`);
       }
-    })();
-  }, []);
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutos
+  });
+
+  // Query para buscar informações dos usuários (executada apenas quando temos serviços)
+  const { 
+    data: enrichedServices, 
+    isLoading: loadingUsers,
+    isError: errorUsers 
+  } = useQuery<EnrichedService[]>({
+    queryKey: ["enriched-services", servicesData?.servicesFreelancer, currentUser?.id],
+    queryFn: async () => {
+      if (!servicesData?.servicesFreelancer) return [];
+      
+      const services = servicesData.servicesFreelancer;
+      const enriched: EnrichedService[] = [];
+
+      // Buscar informações do usuário para cada serviço
+      for (const service of services) {
+        try {
+          let userData: User | null = null;
+          
+          // CORREÇÃO: Se o serviço foi postado pelo usuário logado, usar os dados do usuário logado
+          if (currentUser && service.ServiceProvider.user_id === currentUser.id) {
+            userData = currentUser;
+            console.log(`Usando dados do usuário logado para serviço ${service.id_serviceFreelancer}`);
+          } else {
+            // Caso contrário, buscar na API
+            try {
+              const userRes = await apiRequest("GET", `/users/${service.ServiceProvider.user_id}`);
+              if (userRes.ok) {
+                const userResponse: UserResponse = await userRes.json();
+                userData = userResponse.user;
+                console.log(`Dados do usuário ${service.ServiceProvider.user_id} carregados da API`);
+              } else {
+                console.error(`Erro ao buscar usuário ${service.ServiceProvider.user_id}: Status ${userRes.status}`);
+              }
+            } catch (apiError) {
+              console.error(`Erro na requisição para usuário ${service.ServiceProvider.user_id}:`, apiError);
+            }
+          }
+
+          if (userData) {
+            enriched.push({
+              ...service,
+              userName: userData.name,
+              userEmail: userData.email,
+              userType: userData.type,
+            });
+          } else {
+            // Fallback: usar dados básicos do ServiceProvider se disponível
+            enriched.push({
+              ...service,
+              userName: service.ServiceProvider.profession || "Prestador",
+              userEmail: "Email não disponível",
+              userType: "prestador",
+            });
+            console.warn(`Usando fallback para serviço ${service.id_serviceFreelancer}`);
+          }
+        } catch (error) {
+          console.error(`Erro geral ao processar usuário ${service.ServiceProvider.user_id}:`, error);
+          // Fallback em caso de erro
+          enriched.push({
+            ...service,
+            userName: service.ServiceProvider.profession || "Prestador",
+            userEmail: "Email não disponível",
+            userType: "prestador",
+          });
+        }
+      }
+
+      console.log(`Processados ${enriched.length} serviços de ${services.length} total`);
+      return enriched;
+    },
+    enabled: !!servicesData?.servicesFreelancer && servicesData.servicesFreelancer.length > 0,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const services = enrichedServices || [];
+  const loading = loadingServices || loadingUsers;
+  const error = errorServices || errorUsers;
 
   if (loading) {
     return (
@@ -123,7 +202,7 @@ export default function ServicesFeed() {
         <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50">
           <div className="flex items-center justify-center h-screen">
             <div className="text-center space-y-6 bg-white/80 backdrop-blur-sm p-8 rounded-3xl border border-white/20 shadow-xl">
-              <div className="animate-spin rounded-full h-16 w-16 border-4 border-gray-300 border-t-orange-600 mx-auto"></div>
+              <Loader2 className="animate-spin h-16 w-16 text-orange-600 mx-auto" />
               <div className="space-y-2">
                 <p className="text-xl font-semibold text-slate-700">Carregando serviços</p>
                 <p className="text-slate-500">Aguarde enquanto buscamos os melhores profissionais</p>
@@ -142,11 +221,13 @@ export default function ServicesFeed() {
           <div className="flex items-center justify-center h-screen">
             <div className="text-center space-y-6 bg-white/80 backdrop-blur-sm p-8 rounded-3xl border border-red-200 shadow-xl">
               <div className="w-20 h-20 bg-gradient-to-br from-red-100 to-red-200 rounded-full flex items-center justify-center mx-auto">
-                <span className="text-red-600 text-3xl">⚠️</span>
+                <AlertCircle className="h-12 w-12 text-red-600" />
               </div>
               <div className="space-y-2">
                 <p className="text-xl font-semibold text-red-700">Ops! Algo deu errado</p>
-                <p className="text-red-600">{error}</p>
+                <p className="text-red-600">
+                  {servicesError?.message || "Erro ao carregar serviços"}
+                </p>
               </div>
               <Button 
                 onClick={() => window.location.reload()} 
@@ -161,21 +242,22 @@ export default function ServicesFeed() {
     );
   }
 
-  // 5) filtrar + ordenar
+  // Filtrar e ordenar serviços
   let filtered = services.filter(
     (s) =>
       s.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.description.toLowerCase().includes(searchTerm.toLowerCase())
+      s.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      s.userName.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   if (sortBy === "newest") {
     filtered.sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   } else if (sortBy === "priceAsc") {
-    filtered.sort((a, b) => a.price - b.price);
+    filtered.sort((a, b) => parseFloat(a.price) - parseFloat(b.price));
   } else {
-    filtered.sort((a, b) => b.price - a.price);
+    filtered.sort((a, b) => parseFloat(b.price) - parseFloat(a.price));
   }
 
   const totalPages = Math.ceil(filtered.length / perPage);
@@ -198,6 +280,14 @@ export default function ServicesFeed() {
     });
   };
 
+  const formatPrice = (priceString: string) => {
+    const price = parseFloat(priceString);
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(price);
+  };
+
   const isNewService = (dateString: string) => {
     const serviceDate = new Date(dateString);
     const now = new Date();
@@ -213,6 +303,9 @@ export default function ServicesFeed() {
         <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 sticky top-0 z-10">
           <div className="max-w-7xl mx-auto px-6 py-8">
             <div className="text-center space-y-6 mb-8">
+              <h1 className="text-4xl md:text-5xl font-bold text-slate-800 mb-4">
+                Serviços Freelancer
+              </h1>
               <p className="text-xl text-slate-600 max-w-3xl mx-auto leading-relaxed">
                 Conecte-se com profissionais talentosos e encontre soluções personalizadas para suas necessidades
               </p>
@@ -318,11 +411,11 @@ export default function ServicesFeed() {
                           </CardTitle>
                           <div className="flex items-center space-x-2">
                             <CardDescription className="text-2xl font-bold text-green-600">
-                              R$ {svc.price.toLocaleString('pt-BR')}
+                              {formatPrice(svc.price)}
                             </CardDescription>
                           </div>
                         </div>
-                        {isNewService(svc.created_at) && (
+                        {isNewService(svc.createdAt) && (
                           <Badge className="bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700 transition-all duration-200 hover:scale-105 hover:shadow-lg">
                             <Star className="h-3 w-3 mr-1" />
                             Novo
@@ -343,17 +436,26 @@ export default function ServicesFeed() {
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold text-slate-800 truncate text-lg">{svc.userName}</p>
                           <p className="text-sm text-slate-500 truncate">{svc.userEmail}</p>
+                          <Badge className="mt-1 bg-blue-100 text-blue-800 text-xs">
+                            {svc.ServiceProvider.profession}
+                          </Badge>
+                          {/* Indicador se é o usuário logado */}
+                          {currentUser && svc.ServiceProvider.user_id === currentUser.id && (
+                            <Badge className="mt-1 ml-2 bg-green-100 text-green-800 text-xs">
+                              Seu serviço
+                            </Badge>
+                          )}
                         </div>
                       </div>
                       
                       <div className="flex items-center text-sm text-slate-500">
                         <Clock className="h-4 w-4 mr-2" />
-                        Publicado em {formatDate(svc.created_at)}
+                        Publicado em {formatDate(svc.createdAt)}
                       </div>
                     </CardContent>
                     
                     <CardFooter className="flex justify-between pt-6 border-t border-white/20 relative z-10">
-                      <Link href={`/providers/${svc.id_provider}`}>
+                      <Link href={`/providers/${svc.ServiceProvider.provider_id}`}>
                         <Button 
                           size="lg" 
                           variant="outline"
@@ -382,10 +484,16 @@ export default function ServicesFeed() {
                             <h3 className="text-2xl font-bold text-slate-800 group-hover:text-orange-600 transition-colors duration-300">
                               {svc.title}
                             </h3>
-                            {isNewService(svc.created_at) && (
+                            {isNewService(svc.createdAt) && (
                               <Badge className="bg-gradient-to-r from-green-500 to-emerald-600 text-white transition-all duration-200 hover:scale-105 hover:shadow-lg">
                                 <Star className="h-3 w-3 mr-1" />
                                 Novo
+                              </Badge>
+                            )}
+                            {/* Indicador se é o usuário logado */}
+                            {currentUser && svc.ServiceProvider.user_id === currentUser.id && (
+                              <Badge className="bg-green-100 text-green-800 text-xs">
+                                Seu serviço
                               </Badge>
                             )}
                           </div>
@@ -396,7 +504,7 @@ export default function ServicesFeed() {
                             <div className="flex items-center space-x-2">
                               <DollarSign className="h-5 w-5 text-green-600" />
                               <span className="text-2xl font-bold text-green-600">
-                                R$ {svc.price.toLocaleString('pt-BR')}
+                                {formatPrice(svc.price)}
                               </span>
                             </div>
                             <div className="flex items-center space-x-3">
@@ -406,16 +514,19 @@ export default function ServicesFeed() {
                               <div>
                                 <span className="font-semibold text-slate-700">{svc.userName}</span>
                                 <p className="text-sm text-slate-500">{svc.userEmail}</p>
+                                <Badge className="mt-1 bg-blue-100 text-blue-800 text-xs">
+                                  {svc.ServiceProvider.profession}
+                                </Badge>
                               </div>
                             </div>
                             <div className="flex items-center space-x-2 text-slate-500">
                               <Clock className="h-4 w-4" />
-                              <span>{formatDate(svc.created_at)}</span>
+                              <span>{formatDate(svc.createdAt)}</span>
                             </div>
                           </div>
                         </div>
                         <div className="flex space-x-3 ml-6">
-                          <Link href={`/providers/${svc.id_provider}`}>
+                          <Link href={`/providers/${svc.ServiceProvider.provider_id}`}>
                             <Button 
                               size="lg" 
                               variant="outline"
@@ -526,3 +637,5 @@ export default function ServicesFeed() {
     </ApplicationLayout>
   );
 }
+
+

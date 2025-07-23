@@ -1,9 +1,10 @@
+
 import { useState, useEffect } from "react";
 import { AuthModals } from "@/components/AuthModals";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
-
+import Navbar from "@/components/Navbar";
 export default function AuthPage() {
   const [isLoginOpen, setIsLoginOpen] = useState<boolean>(false);
   const [isRegisterOpen, setIsRegisterOpen] = useState<boolean>(false);
@@ -35,6 +36,7 @@ export default function AuthPage() {
   }
   return (
     <div className="flex min-h-screen">
+    <Navbar/>
       <div className="w-full lg:w-1/2 p-8 flex flex-col justify-center items-center bg-white">
         <div className="w-full max-w-md space-y-8">
           <div className="text-center">
@@ -110,3 +112,4 @@ export default function AuthPage() {
     </div>
   );
 }
+

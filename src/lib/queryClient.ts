@@ -1,3 +1,4 @@
+
 import { QueryClient } from "@tanstack/react-query";
 
 export const API_BASE_URL = "https://zameed-backend.onrender.com";
@@ -46,3 +47,4 @@ export const queryClient = new QueryClient({
     },
   },
 });
+

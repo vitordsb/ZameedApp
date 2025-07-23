@@ -13,7 +13,6 @@ import ProviderProfile from "@/pages/ProviderProfile";
 import AuthPage from "@/pages/auth-page";
 import AdminDashboard from "@/pages/AdminDashboard";
 import Messages from "@/pages/Messages";
-import TestAuth from "@/pages/TestAuth";
 import AdminBootstrap from "@/pages/AdminBootstrap";
 import ServicePage from "@/pages/ServicePage";
 import LandingLayout from "@/components/layouts/LandingLayout";
@@ -37,7 +36,6 @@ function ProtectedRouter() {
       <ProtectedRoute path="/home/services" component={ServicesFeed} guestAllowed />
       <ProtectedRoute path="/providers/:provider_id" component={ProviderProfile} guestAllowed />
       <ProtectedRoute path="/user/:user_id" component={ClientProfile} guestAllowed />
-      <ProtectedRoute path="/test-auth" component={TestAuth} guestAllowed />
       <ProtectedRoute path="/messages" component={Messages} />
       {/* Admin routes */}
       <ProtectedRoute path="/admin-bootstrap" component={AdminBootstrap} guestAllowed={false} />
@@ -51,7 +49,7 @@ function ProtectedRouter() {
 function App() {
   const [location] = useLocation();
   const isLandingPage = LANDING_ROUTES.includes(location);
-  const Layout = isLandingPage ? LandingLayout : ApplicationLayout;
+  const Layout = isLandingPage ? LandingLayout : ApplicationLayout as any;
 
   return (
     <QueryClientProvider client={queryClient}>

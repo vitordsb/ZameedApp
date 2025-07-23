@@ -1,3 +1,4 @@
+
 // src/pages/SocialFeed.tsx
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueries } from "@tanstack/react-query";
@@ -35,6 +36,8 @@ import {
   Clock,
   Calendar,
   User,
+  Crown,
+  Sparkles,
 } from "lucide-react";
 import { apiRequest} from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -156,16 +159,33 @@ export default function SocialFeed() {
 
   const providers = provRes?.providers ?? [];
 
-  // 2) Busca cada usuário associado
+  // 2) Busca cada usuário associado - CORREÇÃO: Adicionado enabled para evitar requisições desnecessárias
   const userQueries = useQueries({
     queries: providers.map((p) => ({
       queryKey: ["user", p.user_id],
       queryFn: async () => {
-        const r = await apiRequest("GET", `/users/${p.user_id}`);
-        if (!r.ok) throw new Error("Erro ao buscar usuário");
-        const body = await r.json();
-        return body.user as User;
+        try {
+          // CORREÇÃO: Se for o usuário logado, usar dados do contexto
+          if (currentUser && p.user_id === currentUser.id) {
+            console.log(`Usando dados do usuário logado para provider ${p.provider_id}`);
+            return currentUser as User;
+          }
+          
+          const r = await apiRequest("GET", `/users/${p.user_id}`);
+          if (!r.ok) {
+            console.error(`Erro ao buscar usuário ${p.user_id}: Status ${r.status}`);
+            throw new Error(`Erro ao buscar usuário ${p.user_id}`);
+          }
+          const body = await r.json();
+          return body.user as User;
+        } catch (error) {
+          console.error(`Falha na requisição para usuário ${p.user_id}:`, error);
+          throw error;
+        }
       },
+      enabled: !!p.user_id && !loadingProv, // Só executa se tiver user_id válido e providers já carregaram
+      retry: 2, // Tenta novamente 2 vezes em caso de erro
+      retryDelay: 1000, // Aguarda 1 segundo entre tentativas
     })),
   });
 
@@ -184,23 +204,35 @@ export default function SocialFeed() {
       staleTime: 5 * 60 * 1000,
     });
 
-  // 4) Combina providers + users
+  // 4) Combina providers + users - CORREÇÃO: Melhor tratamento de erros
   const combined = useMemo(() => {
     if (loadingProv || loadingUsers) return [];
+    
     return providers
       .map((provider) => {
-        const user = userQueries.find((q) => q.data?.id === provider.user_id)?.data;
+        const userQuery = userQueries.find((q) => 
+          q.data?.id === provider.user_id || 
+          (q.isError && q.failureReason?.message?.includes(provider.user_id.toString()))
+        );
+        
+        // Se a query do usuário falhou, pula este provider
+        if (userQuery?.isError) {
+          console.warn(`Pulando provider ${provider.provider_id} devido a erro no usuário ${provider.user_id}`);
+          return null;
+        }
+        
+        const user = userQuery?.data;
         return user ? { provider, user } : null;
       })
       .filter((x): x is { provider: Provider; user: User } => !!x);
   }, [providers, userQueries, loadingProv, loadingUsers]);
 
-  // 5) Filtra apenas prestadores + aplica filtros de busca e serviço (removido filtro de avaliação)
+  // 5) Filtra apenas prestadores + aplica filtros de busca e serviço
+  // MODIFICAÇÃO: INCLUINDO TODOS OS PRESTADORES (inclusive o usuário logado)
   const list = useMemo(
     () =>
       combined
         .filter(({ user }) => user.type === "prestador")
-        .filter(({ provider }) => provider.user_id !== currentUser?.id)
         .filter(({ provider, user }) => {
           const matchSearch =
             user.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -208,7 +240,7 @@ export default function SocialFeed() {
           const matchService = !serviceFilter || provider.profession === serviceFilter;
           return matchSearch && matchService;
         }),
-    [combined, search, serviceFilter]
+    [combined, search, serviceFilter] // Removido currentUser?.id da dependência
   );
 
   // 6) Processa serviços freelancer mais recentes - Ajustado para nova estrutura
@@ -216,7 +248,7 @@ export default function SocialFeed() {
     if (!servicesRes?.servicesFreelancer) return [];
     return servicesRes.servicesFreelancer
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, 3); // Pega os 5 mais recentes
+      .slice(0, 3); // Pega os 3 mais recentes
   }, [servicesRes]);
 
   const nextSlide = () => {
@@ -265,23 +297,53 @@ export default function SocialFeed() {
     }
   };
 
-  if (loadingProv || loadingUsers) {
+  // Função para verificar se é o usuário logado
+  const isCurrentUser = (userId: number) => {
+    return currentUser && currentUser.id === userId;
+  };
+
+  // CORREÇÃO: Melhor tratamento de estados de loading e erro
+  if (loadingProv) {
     return (
       <ApplicationLayout>
         <div className="flex items-center justify-center min-h-screen">
-          <Loader2 className="animate-spin h-12 w-12 text-amber-600 mx-auto" />
+          <div className="text-center">
+            <Loader2 className="animate-spin h-12 w-12 text-amber-600 mx-auto mb-4" />
+            <p className="text-lg text-slate-600">Carregando prestadores...</p>
+          </div>
         </div>
       </ApplicationLayout>
     );
   }
-  if (errProv || errUsers) {
+
+  if (errProv) {
     return (
       <ApplicationLayout>
-        <div className="flex items-center justify-center min-h-screen bg-red-50">
-          <AlertCircle className="h-12 w-12 text-red-600 mx-auto" />
-          <p className="mt-4 text-lg font-medium text-red-600">
-            Ocorreu um erro ao carregar os dados.
+        <div className="flex flex-col items-center justify-center min-h-screen bg-red-50">
+          <AlertCircle className="h-12 w-12 text-red-600 mb-4" />
+          <p className="text-lg font-medium text-red-600 mb-2">
+            Erro ao carregar prestadores
           </p>
+          <p className="text-sm text-red-500">
+            Verifique sua conexão e tente novamente
+          </p>
+        </div>
+      </ApplicationLayout>
+    );
+  }
+
+  // Se ainda está carregando usuários, mostra loading parcial
+  if (loadingUsers) {
+    return (
+      <ApplicationLayout>
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <Loader2 className="animate-spin h-12 w-12 text-amber-600 mx-auto mb-4" />
+            <p className="text-lg text-slate-600">Carregando informações dos usuários...</p>
+            <p className="text-sm text-slate-500 mt-2">
+              {providers.length} prestadores encontrados, carregando detalhes...
+            </p>
+          </div>
         </div>
       </ApplicationLayout>
     );
@@ -468,121 +530,200 @@ export default function SocialFeed() {
                 </Badge>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {list.map(({ provider, user }) => (
-                  <motion.div
-                    key={provider.provider_id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="group"
-                  >
-                    {/* Card de Perfil Modernizado */}
-                    <Card className="relative overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-500 bg-white border-0 rounded-3xl group-hover:scale-[1.02]">
-                      {/* Banner Superior com Gradiente Dinâmico */}
-                      <div className="h-32 bg-gradient-to-br from-orange-400 via-amber-500 to-yellow-500 relative overflow-hidden">
-                        {/* Padrão decorativo */}
-                        <div className="absolute inset-0 opacity-20">
-                          <div className="absolute top-0 right-0 w-32 h-32 bg-white rounded-full -translate-y-16 translate-x-16"></div>
-                          <div className="absolute bottom-0 left-0 w-24 h-24 bg-white rounded-full translate-y-12 -translate-x-12"></div>
+              {/* CORREÇÃO: Mostrar aviso se alguns usuários falharam ao carregar */}
+              {errUsers && (
+                <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-5 h-5 text-yellow-600" />
+                    <p className="text-sm text-yellow-800">
+                      Alguns perfis não puderam ser carregados. Mostrando {list.length} de {providers.length} prestadores disponíveis.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* GRID DE CARDS - AGORA INCLUINDO TODOS OS PRESTADORES */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {list.map(({ provider, user }) => {
+                  const isOwnProfile = isCurrentUser(user.id);
+                  
+                  return (
+                    <motion.div
+                      key={provider.provider_id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="group"
+                    >
+                      {/* Card com Destaque para Usuário Logado */}
+                      <Card className={`relative overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 border-0 rounded-2xl group-hover:scale-[1.02] ${
+                        isOwnProfile 
+                          ? 'bg-gradient-to-br from-blue-50 to-indigo-100 ring-2 ring-blue-300 ring-opacity-50' 
+                          : 'bg-white'
+                      }`}>
+                        
+                        {/* Badge "Seu Perfil" para o usuário logado */}
+                        {isOwnProfile && (
+                          <div className="absolute top-2 right-2 z-10">
+                            <Badge className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-2 py-1 rounded-full text-xs font-bold shadow-lg">
+                              <Crown className="w-3 h-3 mr-1" />
+                              Seu Perfil
+                            </Badge>
+                          </div>
+                        )}
+                        
+                        {/* Banner Superior Compacto */}
+                        <div className={`h-16 relative overflow-hidden ${
+                          isOwnProfile 
+                            ? 'bg-gradient-to-br from-blue-500 via-indigo-600 to-purple-600' 
+                            : 'bg-gradient-to-br from-orange-400 via-amber-500 to-yellow-500'
+                        }`}>
+                          {/* Padrão decorativo sutil */}
+                          <div className="absolute inset-0 opacity-20">
+                            <div className="absolute top-0 right-0 w-16 h-16 bg-white rounded-full -translate-y-8 translate-x-8"></div>
+                            {isOwnProfile && (
+                              <Sparkles className="absolute top-2 left-2 w-4 h-4 text-white/60 animate-pulse" />
+                            )}
+                          </div>
                         </div>
-                        {/* Overlay sutil */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent"></div>
-                      </div>
-                      
-                      {/* Avatar Flutuante */}
-                      <div className="absolute top-16 left-1/2 transform -translate-x-1/2">
-                        <div className="relative">
-                          <Avatar className="w-24 h-24 ring-4 ring-white shadow-2xl border-2 border-white/50">
-                            <AvatarFallback className="text-2xl font-bold bg-gradient-to-br from-slate-600 to-slate-800 text-white">
+                        
+                        {/* Avatar Posicionado */}
+                        <div className="absolute top-6 left-1/2 transform -translate-x-1/2">
+                          <Avatar className={`w-14 h-14 ring-3 shadow-lg border-2 border-white/50 ${
+                            isOwnProfile ? 'ring-blue-300' : 'ring-white'
+                          }`}>
+                            <AvatarFallback className={`text-base font-bold text-white ${
+                              isOwnProfile 
+                                ? 'bg-gradient-to-br from-blue-600 to-indigo-800' 
+                                : 'bg-gradient-to-br from-slate-600 to-slate-800'
+                            }`}>
                               {user.name[0].toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
-                          {/* Badge de verificação premium */}
-                          <div className="absolute -bottom-2 -right-2 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full p-2 shadow-lg">
-                            <CheckCircle className="w-5 h-5 text-white" />
+                          {/* Badge de verificação */}
+                          <div className={`absolute -bottom-1 -right-1 rounded-full p-1 shadow-lg ${
+                            isOwnProfile 
+                              ? 'bg-gradient-to-r from-blue-400 to-indigo-500' 
+                              : 'bg-gradient-to-r from-green-400 to-emerald-500'
+                          }`}>
+                            <CheckCircle className="w-3 h-3 text-white" />
                           </div>
                         </div>
-                      </div>
 
-                      {/* Conteúdo Principal */}
-                      <CardContent className="pt-20 pb-8 px-8 text-center">
-                        {/* Nome e Profissão */}
-                        <div className="mb-6">
-                          <CardTitle className="text-2xl font-bold text-slate-800 mb-3 tracking-tight">
-                            {user.name}
-                          </CardTitle>
-                          
-                          <Badge className="mb-4 bg-gradient-to-r from-orange-100 to-amber-100 text-orange-800 px-4 py-2 rounded-full font-medium border border-orange-200/50">
-                            {provider.profession}
-                          </Badge>
-                        </div>
-
-                        {/* Avaliação Estilizada */}
-                        <div className="flex items-center justify-center gap-2 mb-6 p-3 bg-gradient-to-r from-amber-50 to-yellow-50 rounded-2xl border border-amber-100">
-                          <div className="flex items-center gap-1">
-                            {[...Array(5)].map((_, i) => (
-                              <Star 
-                                key={i} 
-                                className={`w-5 h-5 transition-colors duration-200 ${
-                                  i < Math.floor(provider.rating_mid) 
-                                    ? 'text-amber-400 fill-current drop-shadow-sm' 
-                                    : 'text-gray-300'
-                                }`} 
-                              />
-                            ))}
+                        {/* Conteúdo Principal Compacto */}
+                        <CardContent className="pt-9 pb-4 px-4 text-center">
+                          {/* Nome e Profissão */}
+                          <div className="mb-2">
+                            <CardTitle className={`text-base font-bold mb-1 tracking-tight line-clamp-1 ${
+                              isOwnProfile ? 'text-blue-900' : 'text-slate-800'
+                            }`}>
+                              {user.name}
+                            </CardTitle>
+                            
+                            <Badge className={`mb-2 px-2 py-1 rounded-full font-medium border text-xs ${
+                              isOwnProfile 
+                                ? 'bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-800 border-blue-200/50' 
+                                : 'bg-gradient-to-r from-orange-100 to-amber-100 text-orange-800 border-orange-200/50'
+                            }`}>
+                              {provider.profession}
+                            </Badge>
                           </div>
-                          <span className="ml-2 text-lg font-semibold text-amber-700">
-                            {provider.rating_mid}
-                          </span>
-                        </div>
 
-                        {/* Descrição com altura fixa e line-clamp */}
-                        <div className="mb-6 h-16 flex items-center justify-center">
-                          <CardDescription className="text-slate-600 text-sm leading-relaxed line-clamp-3 text-center">
-                            {provider.about ?? "Profissional especializado em projetos arquitetônicos únicos e personalizados, com foco em soluções criativas e funcionais."}
-                          </CardDescription>
-                        </div>
+                          {/* Avaliação Limpa */}
+                          <div className="flex items-center justify-center gap-2 mb-2">
+                            <Star className={`w-4 h-4 fill-current ${
+                              isOwnProfile ? 'text-blue-500' : 'text-amber-500'
+                            }`} />
+                            <span className={`text-sm font-semibold ${
+                              isOwnProfile ? 'text-blue-800' : 'text-gray-800'
+                            }`}>
+                              {provider.rating_mid}
+                            </span>
+                            <span className={`text-xs ml-1 ${
+                              isOwnProfile ? 'text-blue-400' : 'text-gray-400'
+                            }`}>
+                              • {provider.views_profile} views
+                            </span>
+                          </div>
 
-                        {/* Estatísticas em Grid */}
-                        <div className="grid grid-cols-2 gap-4 mb-8">
-                          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-2xl border border-blue-100">
-                            <div className="flex items-center justify-center gap-2 text-blue-600 mb-1">
-                              <MapPin className="w-4 h-4" />
+                          {/* Descrição Compacta */}
+                          <div className="mb-3 h-8 flex items-center justify-center">
+                            <CardDescription className={`text-xs leading-tight line-clamp-2 text-center ${
+                              isOwnProfile ? 'text-blue-700' : 'text-slate-600'
+                            }`}>
+                              {provider.about ?? "Profissional especializado em projetos arquitetônicos únicos e personalizados."}
+                            </CardDescription>
+                          </div>
+
+                          {/* Informação de Localização Compacta */}
+                          <div className="mb-3">
+                            <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full border ${
+                              isOwnProfile 
+                                ? 'bg-blue-50 border-blue-100' 
+                                : 'bg-blue-50 border-blue-100'
+                            }`}>
+                              <MapPin className={`w-3 h-3 ${
+                                isOwnProfile ? 'text-blue-600' : 'text-blue-600'
+                              }`} />
+                              <span className={`text-xs font-medium ${
+                                isOwnProfile ? 'text-blue-800' : 'text-blue-800'
+                              }`}>
+                                Cidade {user.cidade_id}
+                              </span>
                             </div>
-                            <p className="text-sm font-medium text-blue-800">Cidade {user.cidade_id}</p>
                           </div>
-                          <div className="bg-gradient-to-br from-purple-50 to-violet-50 p-4 rounded-2xl border border-purple-100">
-                            <div className="flex items-center justify-center gap-2 text-purple-600 mb-1">
-                              <Users className="w-4 h-4" />
-                            </div>
-                            <p className="text-sm font-medium text-purple-800">{provider.views_profile} views</p>
+
+                          {/* Botões de Ação Compactos */}
+                          <div className="flex gap-2">
+                            <Link href={`/providers/${provider.provider_id}`} className="flex-1">
+                              <Button className={`w-full font-semibold py-1.5 rounded-xl transition-all duration-300 shadow-md hover:shadow-lg text-xs ${
+                                isOwnProfile 
+                                  ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white' 
+                                  : 'bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white'
+                              }`}>
+                                <User className="w-3 h-3 mr-1" />
+                                {isOwnProfile ? 'Meu Perfil' : 'Ver Perfil'}
+                              </Button>
+                            </Link>
+                            {!isOwnProfile && (
+                              <Button 
+                                variant="outline" 
+                                size="icon"
+                                className="border-2 border-orange-200 text-orange-600 hover:bg-orange-50 hover:border-orange-300 rounded-xl p-1.5 transition-all duration-300"
+                              >
+                                <MessageCircle className="w-3 h-3" />
+                              </Button>
+                            )}
                           </div>
-                        </div>
-
-                        {/* Botões de Ação Modernos */}
-                        <div className="flex gap-3">
-                          <Link href={`/providers/${provider.provider_id}`} className="flex-1">
-                            <Button className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold py-3 rounded-2xl transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-[1.02] border-0">
-                              <User className="w-5 h-5 mr-2" />
-                              Ver Perfil
-                            </Button>
-                          </Link>
-                          <Button 
-                            variant="outline" 
-                            size="icon"
-                            className="border-2 border-orange-200 text-orange-600 hover:bg-orange-50 hover:border-orange-300 rounded-2xl p-3 transition-all duration-300 hover:scale-105"
-                          >
-                            <MessageCircle className="w-5 h-5" />
-                          </Button>
-                        </div>
-                      </CardContent>
-
-                      {/* Efeito de hover sutil */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-transparent via-transparent to-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none rounded-3xl"></div>
-                    </Card>
-                  </motion.div>
-                ))}
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  );
+                })}
               </div>
+
+              {/* Mensagem quando não há resultados */}
+              {list.length === 0 && !loadingProv && !loadingUsers && (
+                <div className="text-center py-12">
+                  <Users className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-slate-600 mb-2">
+                    Nenhum arquiteto encontrado
+                  </h3>
+                  <p className="text-slate-500 mb-4">
+                    Tente ajustar os filtros de busca para encontrar mais profissionais.
+                  </p>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setSearch("");
+                      setLocationFilter("");
+                      setServiceFilter("");
+                    }}
+                    className="text-amber-600 border-amber-200 hover:bg-amber-50"
+                  >
+                    Limpar Filtros
+                  </Button>
+                </div>
+              )}
             </section>
 
             {/* Sidebar */}
@@ -720,3 +861,5 @@ export default function SocialFeed() {
     </ApplicationLayout>
   );
 }
+
+

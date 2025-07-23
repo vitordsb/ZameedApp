@@ -1,8 +1,17 @@
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { useEffect, useState } from "react"
 
 const Hero = () => {
-  return (
+  const [text, setText] = useState<string>("Comece a usar agora")
+
+   useEffect (() => {
+     if (sessionStorage.getItem("token")) {
+         setText("Continuar usando, você está online!")
+     }
+   }, [])
+
+ return (
     <section 
       className="flex items-center justify-center" 
       style={{ 
@@ -17,9 +26,9 @@ const Hero = () => {
         <p className="text-xl md:text-2xl mb-8 max-w-3xl mx-auto">O melhor lugar para encontrar profissionais de design e arquitetura para os seus projetos.</p>
         
         <div className="flex flex-col md:flex-row gap-4 justify-center">
-          <Link href="/auth">
+          <Link href="/home">
             <Button className="bg-amber-500 text-white px-8 py-6 rounded-full text-lg font-semibold hover:bg-amber-600 transition-all flex">
-              Encontre agora um projetista
+              {text}
             </Button>
           </Link>
         </div>

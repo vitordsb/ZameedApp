@@ -1,3 +1,4 @@
+
 // src/pages/ProviderProfile.tsx
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
@@ -36,7 +37,12 @@ import {
   Phone,
   Image as ImageIcon,
   Grid3X3,
+  Loader2,
+  Settings,
+  UserCheck,
+  AlertCircle,
 } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 
 export interface ProviderApi {
   provider_id: number;
@@ -88,64 +94,81 @@ export default function ProviderProfile() {
   const { provider_id } = useParams<{ provider_id: string }>();
   const [, setLocation] = useLocation();
   const viewed = useRef(false);
-  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  
+  // Hook para acessar dados do usuário logado
+  const { user: currentUser } = useAuth();
 
   // Estados para portfólio
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [images, setImages] = useState<ImageItem[]>([]);
   const [loadingPortfolio, setLoadingPortfolio] = useState(true);
 
-  // Obter user_id do usuário logado
-  useEffect(() => {
-    const token = sessionStorage.getItem("token");
-    if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        setCurrentUserId(payload.user_id || payload.id);
-      } catch (error) {
-        console.error("Erro ao decodificar token:", error);
-      }
-    }
-  }, []);
-
-  // 1) Provider
-  const { data: provEnv } = useQuery<{ provider: ProviderApi }>({
+  // 1) Provider - com estados de loading e error explícitos
+  const { 
+    data: provEnv, 
+    isLoading: isLoadingProvider, 
+    isError: isErrorProvider,
+    error: providerError 
+  } = useQuery<{ provider: ProviderApi }>({
     queryKey: ["provider", provider_id],
     enabled: !!provider_id,
     queryFn: async () => {
       const res = await apiRequest("GET", `/providers/${provider_id}`);
-      if (!res.ok) throw new Error("Provider não encontrado");
+      if (!res.ok) {
+        throw new Error(`Provider não encontrado: ${res.status}`);
+      }
       return res.json();
     },
+    retry: 2,
+    retryDelay: 1000,
   });
   const provider = provEnv?.provider;
 
-  // 2) User
+  // 2) User - com estados de loading e error explícitos
   const userId = provider?.user_id.toString();
-  const { data: userEnv } = useQuery<{ user: UserApi }>({
+  const { 
+    data: userEnv, 
+    isLoading: isLoadingUser, 
+    isError: isErrorUser,
+    error: userError 
+  } = useQuery<{ user: UserApi }>({
     queryKey: ["user", userId],
     enabled: !!userId,
     queryFn: async () => {
+      // CORREÇÃO: Se for o usuário logado, usar os dados do contexto
+      if (currentUser && userId && parseInt(userId) === currentUser.id) {
+        console.log("Usando dados do usuário logado do contexto");
+        return { user: currentUser as UserApi };
+      }
+      
+      // Caso contrário, buscar na API
       const res = await apiRequest("GET", `/users/${userId}`);
-      if (!res.ok) throw new Error("Usuário não encontrado");
+      if (!res.ok) {
+        throw new Error(`Usuário não encontrado: ${res.status}`);
+      }
       return res.json();
     },
+    retry: 2,
+    retryDelay: 1000,
   });
   const user = userEnv?.user;
 
-  // 3) Incrementa view apenas uma vez e se for usuário diferente
+  // 3) Verificar se é o próprio usuário
+  const isOwnProfile = currentUser && provider && currentUser.id === provider.user_id;
+
+  // 4) Incrementa view apenas uma vez e se for usuário diferente
   useEffect(() => {
     if (
       provider &&
-      currentUserId &&
-      currentUserId !== provider.user_id &&
+      currentUser &&
+      currentUser.id !== provider.user_id &&
       !viewed.current
     ) {
       // Verificar se já visualizou antes de incrementar
       checkAndIncrementView();
       viewed.current = true;
     }
-  }, [provider, currentUserId]);
+  }, [provider, currentUser]);
 
   const checkAndIncrementView = async () => {
     try {
@@ -157,7 +180,7 @@ export default function ProviderProfile() {
     }
   };
 
-  // 4) Carrega e filtra serviços
+  // 5) Carrega e filtra serviços
   const [services, setServices] = useState<Service[]>([]);
   const [loadingSv, setLoadingSv] = useState(true);
   useEffect(() => {
@@ -178,7 +201,7 @@ export default function ProviderProfile() {
     })();
   }, [provider_id]);
 
-  // 5) Carrega portfólio
+  // 6) Carrega portfólio
   useEffect(() => {
     if (userId) {
       loadPortfolio();
@@ -257,26 +280,88 @@ export default function ProviderProfile() {
     return "/placeholder-image.jpg";
   };
 
-  if (!provider || !user) {
+  // ESTADO DE CARREGAMENTO - Mostrar loading enquanto os dados estão sendo buscados
+  if (isLoadingProvider || isLoadingUser) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 flex items-center justify-center">
-        <div className="text-center space-y-6 bg-white/80 backdrop-blur-sm p-8 rounded-3xl border border-white/20 shadow-xl">
-          <div className="w-20 h-20 bg-gradient-to-br from-orange-100 to-amber-200 rounded-full flex items-center justify-center mx-auto">
-            <User className="h-10 w-10 text-orange-500" />
+      <AplicationLayout>
+        <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 flex items-center justify-center">
+          <div className="text-center space-y-6 bg-white/80 backdrop-blur-sm p-8 rounded-3xl border border-white/20 shadow-xl">
+            <div className="w-20 h-20 bg-gradient-to-br from-orange-100 to-amber-200 rounded-full flex items-center justify-center mx-auto">
+              <Loader2 className="h-10 w-10 text-orange-500 animate-spin" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-semibold text-slate-700">Carregando perfil...</h3>
+              <p className="text-slate-500">Aguarde enquanto buscamos as informações do profissional.</p>
+            </div>
           </div>
-          <div className="space-y-2">
-            <h3 className="text-xl font-semibold text-slate-700">Perfil não encontrado</h3>
-            <p className="text-slate-500">O perfil que você está procurando não existe ou foi removido.</p>
-          </div>
-          <Button 
-            onClick={() => setLocation("/home")}
-            className="bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-semibold px-6 py-2 rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Voltar ao Início
-          </Button>
         </div>
-      </div>
+      </AplicationLayout>
+    );
+  }
+
+  // MENSAGEM PARA PRÓPRIO USUÁRIO - Exibir mensagem personalizada quando for o próprio perfil
+  if (isOwnProfile) {
+    return (
+      <AplicationLayout>
+        <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 flex items-center justify-center">
+          <div className="text-center space-y-6 bg-white/80 backdrop-blur-sm p-8 rounded-3xl border border-blue-200 shadow-xl max-w-md mx-4">
+            <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-blue-200 rounded-full flex items-center justify-center mx-auto">
+              <UserCheck className="h-10 w-10 text-blue-600" />
+            </div>
+            <div className="space-y-4">
+              <h3 className="text-xl font-semibold text-blue-700">Esse é o seu usuário</h3>
+              <p className="text-slate-600 leading-relaxed">
+                Por favor, se quiser ver informações, clique no seu perfil no canto superior direito e vá em "Meu Perfil".
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Button 
+                onClick={() => setLocation("/profile")}
+                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold px-6 py-2 rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl"
+              >
+                <Settings className="h-4 w-4 mr-2" />
+                Ir para Meu Perfil
+              </Button>
+              <Button 
+                onClick={() => setLocation("/home")}
+                variant="outline"
+                className="border-slate-300 text-slate-600 hover:bg-slate-50 font-semibold px-6 py-2 rounded-xl transition-all duration-300 hover:scale-105"
+              >
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Voltar ao Início
+              </Button>
+            </div>
+          </div>
+        </div>
+      </AplicationLayout>
+    );
+  }
+
+  // ESTADO DE ERRO - Só mostrar "perfil não encontrado" se realmente houver erro ou dados não existirem
+  if (isErrorProvider || isErrorUser || !provider || !user) {
+    return (
+      <AplicationLayout>
+        <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 flex items-center justify-center">
+          <div className="text-center space-y-6 bg-white/80 backdrop-blur-sm p-8 rounded-3xl border border-red-200 shadow-xl">
+            <div className="w-20 h-20 bg-gradient-to-br from-red-100 to-red-200 rounded-full flex items-center justify-center mx-auto">
+              <AlertCircle className="h-10 w-10 text-red-600" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-semibold text-red-700">Perfil não encontrado</h3>
+              <p className="text-red-600">
+                {providerError?.message || userError?.message || "O perfil que você está procurando não existe ou foi removido."}
+              </p>
+            </div>
+            <Button 
+              onClick={() => setLocation("/home")}
+              className="bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-semibold px-6 py-2 rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl"
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Voltar ao Início
+            </Button>
+          </div>
+        </div>
+      </AplicationLayout>
     );
   }
 
@@ -690,3 +775,5 @@ export default function ProviderProfile() {
     </AplicationLayout> 
   );
 }
+
+

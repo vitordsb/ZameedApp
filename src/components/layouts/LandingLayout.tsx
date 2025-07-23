@@ -9,11 +9,9 @@ interface LandingLayoutProps {
 export default function LandingLayout({ children }: LandingLayoutProps) {
   return (
     <div className="flex flex-col min-h-screen">
-      <Navbar />
       <main className="flex-grow">
         {children}
       </main>
-      <Footer />
     </div>
   );
 }

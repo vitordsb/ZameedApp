@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -41,18 +40,17 @@ const Navbar = () => {
     if (isLoggedIn && user) {
       const fetchUnreadCount = async () => {
         try {
-          const response = await fetch('/api/messages/unread/count');
+          // Ajuste o endpoint conforme a sua API real para contagem de mensagens não lidas
+          const response = await fetch("https://zameed-backend.onrender.com/api/messages/unread/count");
           if (response.ok) {
             const data = await response.json();
             setUnreadMessages(data.count);
           }
         } catch (error) {
-          console.error('Failed to fetch unread messages:', error);
+          console.error("Failed to fetch unread messages:", error);
         }
       };
 
-      const interval = setInterval(fetchUnreadCount, 30000);
-      return () => clearInterval(interval);
     }
   }, [isLoggedIn, user]);
 
@@ -125,15 +123,15 @@ const Navbar = () => {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src={user.profileImage || undefined} alt={user.username} />
-                    <AvatarFallback>{getInitials(user.username)}</AvatarFallback>
+                    <AvatarImage src={user.profileImage || undefined} alt={user.name} />
+                    <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56" align="end">
                 <DropdownMenuLabel className="font-normal">
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium leading-none">{user.username}</p>
+                    <p className="text-sm font-medium leading-none">{user.name}</p>
                     <p className="text-xs leading-none text-muted-foreground">{user.email}</p>
                   </div>
                 </DropdownMenuLabel>
@@ -143,13 +141,6 @@ const Navbar = () => {
                     <User className="mr-2 h-4 w-4" /> <span>Perfil</span>
                   </Link>
                 </DropdownMenuItem>
-                {user.userType === 'admin' && (
-                  <DropdownMenuItem asChild>
-                    <Link href="/admin">
-                      <ShoppingBag className="mr-2 h-4 w-4" /> <span>Administração</span>
-                    </Link>
-                  </DropdownMenuItem>
-                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout}>
                   <LogOut className="mr-2 h-4 w-4" /> <span>Desconectar</span>
@@ -174,15 +165,26 @@ const Navbar = () => {
                 <Link href="/home">
                   <div className="text-gray-700 hover:text-amber-500">Início</div>
                 </Link>
-                <Link href="/home/news">
-                  <div className="text-gray-700 hover:text-amber-500">Novidades</div>
+                <Link href="/home/services">
+                  <div className="text-gray-700 hover:text-amber-500">Serviços</div>
                 </Link>
-                <Link href="/home/gallery">
-                  <div className="text-gray-700 hover:text-amber-500">Projetos</div>
+                <Link href="/home/demands">
+                  <div className="text-gray-700 hover:text-amber-500">Demandas</div>
                 </Link>
-                <Link href="/home/products">
-                  <div className="text-gray-700 hover:text-amber-500">Produtos</div>
-                </Link>
+                {isLoggedIn && (
+                  <Link href="/messages">
+                    <div className="relative flex items-center gap-1 text-gray-700 hover:text-amber-500">
+                      <MessageCircle className="h-5 w-5" /> Mensagens
+                    </div>
+                  </Link>
+                )}
+                {isLoggedIn && user ? (
+                  <Link href="/profile">
+                    <div className="text-gray-700 hover:text-amber-500">Perfil</div>
+                  </Link>
+                ) : (
+                  <Button onClick={() => navigate("/auth")}>Login</Button>
+                )}
                 {isLoggedIn && <Button onClick={handleLogout}>Logout</Button>}
               </div>
             </SheetContent>
@@ -194,4 +196,3 @@ const Navbar = () => {
 };
 
 export default Navbar;
-

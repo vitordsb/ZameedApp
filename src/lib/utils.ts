@@ -14,6 +14,18 @@ export function formatPrice(price: number): string {
   }).format(price);
 }
 
+export function formatCNPJ (cnpj: string): string {
+  return cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
+}
+export function formatCPF (cpf: string): string {
+  return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+}
+export function formatCEP (cep: string): string {
+  return cep.replace(/(\d{5})(\d{3})/, "$1-$2");
+}
+export function formatEmail (email: string): string {
+  return email.replace(/(.*)@(.*)/, "$1***@$2");
+}
 export function parseJwt<T = any>(token: string): T | null {
   try {
     const base64Url = token.split('.')[1];

@@ -1,4 +1,5 @@
 
+
 // src/pages/Profile.tsx
 import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
@@ -176,6 +177,10 @@ export default function Profile() {
   // Estado para taxa de conclusão
   const [completionRate, setCompletionRate] = useState(0);
 
+  // Estado para dados do provider
+  const [providerData, setProviderData] = useState<Provider | null>(null);
+  const [loadingProvider, setLoadingProvider] = useState(false);
+
   // Máscaras de formatação
   const formatCPF = (value: string) => {
     const numbers = value.replace(/\D/g, "");
@@ -235,6 +240,31 @@ export default function Profile() {
     }
   };
 
+  // Função para buscar dados do provider
+  const loadProviderData = async () => {
+    if (!user || user.type !== "prestador") return;
+    
+    setLoadingProvider(true);
+    try {
+      // Primeiro buscar todos os providers para encontrar o provider_id do usuário atual
+      const providersRes = await apiRequest("GET", "/providers");
+      if (!providersRes.ok) {
+        throw new Error("Erro ao buscar providers");
+      }
+      
+      const providersData = await providersRes.json();
+      const userProvider = providersData.providers?.find((p: Provider) => p.user_id === user.id);
+      
+      if (userProvider) {
+        setProviderData(userProvider);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar dados do provider:", error);
+    } finally {
+      setLoadingProvider(false);
+    }
+  };
+
   // Calcular taxa de conclusão
   const calculateCompletionRate = () => {
     const fields = [
@@ -245,8 +275,8 @@ export default function Profile() {
     ];
 
     // Adicionar campos específicos para prestadores
-    if (user?.type === "prestador") {
-      fields.push((user as any).profession, (user as any).about);
+    if (user?.type === "prestador" && providerData) {
+      fields.push(providerData.profession, providerData.about);
     }
 
     const filledFields = fields.filter(field => field && field.trim() !== "").length;
@@ -258,7 +288,7 @@ export default function Profile() {
   // Atualizar taxa de conclusão quando dados mudarem
   useEffect(() => {
     setCompletionRate(calculateCompletionRate());
-  }, [personalData, addressData, user]);
+  }, [personalData, addressData, user, providerData]);
 
   // Dados estáticos do perfil
   const profileFields = useMemo(() => {
@@ -314,19 +344,19 @@ export default function Profile() {
     ];
 
     // Adiciona campos específicos para prestadores
-    if (user.type === "prestador") {
+    if (user.type === "prestador" && providerData) {
       base.push(
         {
           key: "profession" as FieldKey,
           label: "Profissão",
-          value: (user as any).profession || "Não informado",
+          value: providerData.profession || "Não informado",
           editable: true,
           icon: Briefcase,
         },
         {
           key: "about" as FieldKey,
           label: "Sobre Mim",
-          value: (user as any).about || "Conte um pouco sobre você...",
+          value: providerData.about || "Conte um pouco sobre você...",
           editable: true,
           icon: User,
         }
@@ -334,13 +364,14 @@ export default function Profile() {
     }
 
     return base;
-  }, [user, personalData, addressData]);
+  }, [user, personalData, addressData, providerData]);
 
   // 1) Carrega serviços na montagem (só se for prestador)
   useEffect(() => {
     if (user?.type !== "prestador") return;
     loadServices();
     loadPortfolio();
+    loadProviderData();
   }, [user]);
 
   // Função para carregar serviços
@@ -381,8 +412,6 @@ export default function Profile() {
           
           // CORREÇÃO: Acessar portfolioData.posts em vez de portfolioData diretamente
           const portfolioItems = portfolioData.posts || portfolioData;
-          console.log("Portfolio items:", portfolioItems); // Debug
-          
           setPortfolio(Array.isArray(portfolioItems) ? portfolioItems : []);
         } catch (jsonError) {
           console.error("Erro ao fazer parse do JSON do portfólio:", jsonError);
@@ -437,7 +466,7 @@ export default function Profile() {
     const image = images.find(img => img.id === imageId);
       if (image?.image_path) {
         const baseUrl = "https://zameed-backend.onrender.com";
-        const imagePath = image.image_path.replace(/^uploads\//, '');
+        const imagePath = image.image_path.replace(/^uploads\//, "");
         const imageUrl = `${baseUrl}/uploads/${imagePath}`;
         return imageUrl;
       }
@@ -473,6 +502,43 @@ export default function Profile() {
           description: err.message,
           variant: "destructive"
         });
+      }
+    };
+
+    // Funções de criação de serviço
+    const handleCreateService = async () => {
+      if (!user || user.type !== "prestador") return;
+      if (!newService.title || !newService.description || !newService.price) {
+        toast({
+          title: "Campos incompletos",
+          description: "Por favor, preencha todos os campos do serviço.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setCreatingService(true);
+      try {
+        const res = await apiRequest("POST", "/servicesfreelancer", newService);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || `Status ${res.status}`);
+        }
+        toast({
+          title: "Sucesso",
+          description: "Serviço criado com sucesso!",
+        });
+        setNewService({ title: "", description: "", price: "" });
+        setIsCreating(false);
+        await loadServices();
+      } catch (err: any) {
+        toast({
+          title: "Erro ao criar serviço",
+          description: err.message,
+          variant: "destructive",
+        });
+      } finally {
+        setCreatingService(false);
       }
     };
 
@@ -514,1042 +580,385 @@ export default function Profile() {
           setAddressData(prev => ({ ...prev, numero: draftValue }));
           setEditingField(null);
           toast({ title: "Sucesso", description: "Número atualizado!" });
-        } else if (editingField === "name" || editingField === "endereco" || editingField === "experience") {
-          const payload: any = {};
-          payload[editingField] = draftValue;
-          const res = await apiRequest("PUT", `/providers/${user.id}`, payload);
+        } else if (editingField === "name") {
+          // Atualizar nome do usuário via PUT /users/{id}
+          const payload = { name: draftValue };
+          const res = await apiRequest("PUT", `/users/${user.id}`, payload);
           if (!res.ok) {
             const err = await res.json().catch(() => ({}));
             throw new Error(err.message || `Status ${res.status}`);
           }
           const data = await res.json();
-          console.log(data)
-          toast({ title: "Sucesso", description: "Perfil atualizado com sucesso!" });
+          console.log("User updated:", data);
+          toast({ title: "Sucesso", description: "Nome atualizado com sucesso!" });
+          setEditingField(null);
         } else if (editingField === "profession" || editingField === "about") {
-          await apiRequest("PUT", `/providers/${user.id}`, {
-            [editingField]: draftValue,
-          });
+          // Atualizar dados do provider via PUT /providers/{id}
+          if (!providerData) {
+            throw new Error("Dados do provider não encontrados");
+          }
+          
+          const payload = { ...providerData, [editingField]: draftValue };
+          const res = await apiRequest("PUT", `/providers/${providerData.provider_id}`, payload);
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.message || `Status ${res.status}`);
+          }
+          const data = await res.json();
+          console.log("Provider updated:", data);
+          
+          // Atualizar estado local do provider
+          setProviderData(prev => prev ? { ...prev, [editingField]: draftValue } : null);
+          
           toast({ title: "Sucesso", description: "Perfil atualizado com sucesso!" });
+          setEditingField(null);
+        } else {
+          // Para outros campos, manter a lógica original
+          const payload: any = {};
+          payload[editingField] = draftValue;
+          const res = await apiRequest("PUT", `/users/${user.id}`, payload);
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.message || `Status ${res.status}`);
+          }
+          const data = await res.json();
+          console.log(data);
+          toast({ title: "Sucesso", description: "Perfil atualizado com sucesso!" });
+          setEditingField(null);
         }
-        setEditingField(null);
-      } catch (err: any) {
-        toast({ title: "Erro", description: err.message, variant: "destructive" });
-      }
-    };
-
-    // Manipular mudança do CEP com busca automática
-    const handleCepChange = (value: string) => {
-      const formattedCep = formatCEP(value);
-      setDraftValue(formattedCep);
-
-      // Buscar endereço quando CEP estiver completo
-      const cleanCep = value.replace(/\D/g, "");
-      if (cleanCep.length === 8) {
-        fetchAddress(cleanCep);
-      }
-    };
-
-    // Criação de novo serviço
-    const startCreating = () => {
-      setIsCreating(true);
-      setNewService({ title: "", description: "", price: "" });
-    };
-    const cancelCreating = () => {
-      setIsCreating(false);
-      setNewService({ title: "", description: "", price: "" });
-    };
-    const createService = async () => {
-      if (!newService.title || !newService.description || !newService.price) {
-        toast({ 
-          title: "Erro", 
-          description: "Preencha todos os campos obrigatórios.", 
-          variant: "destructive" 
-        });
-        return;
-      }
-
-      setCreatingService(true);
-      try {
-        const payload = {
-          title: newService.title,
-          description: newService.description,
-          price: parseFloat(newService.price),
-        };
-        
-        const res = await apiRequest("POST", "/servicesfreelancer", payload);
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.message || `Status ${res.status}`);
-        }
-        
-        toast({ title: "Sucesso", description: "Serviço criado com sucesso!" });
-        setIsCreating(false);
-        setNewService({ title: "", description: "", price: "" });
-        // Recarrega a lista de serviços
-        await loadServices();
-      } catch (err: any) {
-        toast({ title: "Erro", description: err.message, variant: "destructive" });
-      } finally {
-        setCreatingService(false);
-      }
-    };
-
-    // Edição de serviço
-    const startEditSvc = (svc: Service) => {
-      setEditingId(svc.id_serviceFreelancer);
-      setDraftSvc({
-        title: svc.title,
-        description: svc.description,
-        price: svc.price,
-      });
-    };
-    const cancelEditSvc = () => {
-      setEditingId(null);
-    };
-    const saveSvc = async () => {
-      if (editingId == null) return;
-      try {
-        const payload = {
-          title: draftSvc.title,
-          description: draftSvc.description,
-          price: parseFloat(draftSvc.price),
-        };
-        const res = await apiRequest("PUT", `/servicesfreelancer/${editingId}`, payload);
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.message || `Status ${res.status}`);
-        }
-        toast({ title: "Sucesso", description: "Serviço atualizado com sucesso!" });
-        setEditingId(null);
-        // Recarrega a lista de serviços
-        await loadServices();
-      } catch (err: any) {
-        toast({ title: "Erro", description: err.message, variant: "destructive" });
-      }
-    };
-
-    // Funções do portfólio - ETAPA 1: Upload da imagem
-    const startImageUpload = () => {
-      setIsUploadingImage(true);
-      setUploadedImageId(null);
-      setUploadedImageUrl(null);
-    };
-
-    const cancelImageUpload = () => {
-      setIsUploadingImage(false);
-      setUploadedImageId(null);
-      setUploadedImageUrl(null);
-    };
-
-    const handleImageUpload = async (file: File) => {
-      // Verificar se é uma imagem
-      if (!file.type.startsWith('image/')) {
-        toast({
-          title: "Erro",
-          description: "Por favor, selecione apenas arquivos de imagem.",
-          variant: "destructive"
-        });
-        return;
-      }
-      
-      // Verificar tamanho (máximo 10MB)
-      if (file.size > 10 * 1024 * 1024) {
-        toast({
-          title: "Erro",
-          description: "A imagem deve ter no máximo 10MB.",
-          variant: "destructive"
-        });
-        return;
-      }
-
-      setUploadingImage(true);
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('type', 'portfolio');
-
-        const uploadRes = await apiRequest("POST", "/upload", formData);
-
-        if (!uploadRes.ok) {
-          throw new Error("Erro ao fazer upload da imagem");
-        }
-
-        const uploadData = await uploadRes.json();
-        
-        console.log("Upload data:", uploadData);
-        // Salvar o ID e URL da imagem - CORRIGIDO: acessar userImage.id
-        const imageId = uploadData.userImage?.id || uploadData.id;
-        const imageUrl = uploadData.userImage?.image_path || uploadData.image_url;
-        
-        setUploadedImageId(imageId);
-        setUploadedImageUrl(imageUrl || URL.createObjectURL(file));
-        
-        toast({
-          title: "Sucesso",
-          description: "Imagem enviada com sucesso! Agora adicione o título e descrição."
-        });
-
-        // Avançar para a segunda etapa
-        setIsUploadingImage(false);
-        setIsCreatingPortfolioItem(true);
-
       } catch (err: any) {
         toast({
           title: "Erro",
           description: err.message,
-          variant: "destructive"
+          variant: "destructive",
         });
-      } finally {
-        setUploadingImage(false);
       }
     };
 
-    // ETAPA 2: Criação do item do portfólio
-    const cancelPortfolioItemCreation = () => {
-      setIsCreatingPortfolioItem(false);
-      setPortfolioItemData({ title: "", description: "" });
-      setUploadedImageId(null);
-      setUploadedImageUrl(null);
-    };
-
-    const createPortfolioItem = async () => {
-      if (!portfolioItemData.title || !uploadedImageId) {
-        toast({
-          title: "Erro",
-          description: "Título é obrigatório.",
-          variant: "destructive"
-        });
-        return;
-      }
-      setCreatingPortfolioItem(true);
-      try {
-        const portfolioPayload = {
-          image_id: uploadedImageId,
-          title: portfolioItemData.title,
-          description: portfolioItemData.description || ""
-        };
-        const portfolioRes = await apiRequest("POST", "/portfolio", portfolioPayload);
-        if (!portfolioRes.ok) {
-          throw new Error("Erro ao criar item do portfólio");
-        }
-        toast({
-          title: "Sucesso",
-          description: "Item adicionado ao portfólio com sucesso!"
-        });
-
-        setIsCreatingPortfolioItem(false);
-        setPortfolioItemData({ title: "", description: "" });
-        setUploadedImageId(null);
-        setUploadedImageUrl(null);
-        
-        await loadPortfolio();
-
-      } catch (err: any) {
-        toast({
-          title: "Erro",
-          description: err.message,
-          variant: "destructive"
-        });
-      } finally {
-        setCreatingPortfolioItem(false);
-      }
-    };
-
-    const getInitials = (name: string) => {
-      return name
-        .split(" ")
-        .map((n) => n[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2);
-    };
-
-    const formatDate = (dateString: string) => {
-      try {
-        const date = new Date(dateString);
-        
-        if (isNaN(date.getTime())) {
-          console.warn("Data inválida:", dateString);
-          return "Data inválida";
-        }
-        
-        return date.toLocaleDateString('pt-BR', {
-          day: '2-digit',
-          month: 'long',
-          year: 'numeric'
-        });
-      } catch (error) {
-        console.error("Erro ao formatar data:", error, dateString);
-        return "Data inválida";
-      }
-    };
-
-    if (!user) {
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
-          <div className="text-center">
-            <Loader2 className="animate-spin text-amber-600 w-12 h-12 mx-auto mb-4" />
-            <p className="text-slate-600">Carregando perfil...</p>
-          </div>
-        </div>
-      );
-    }
-
+  if (!user) {
     return (
       <AplicationLayout>
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-          <div className="max-w-6xl mx-auto p-6 space-y-8">
-            <div className="relative">
-              <Card className="shadow-xl border-0 bg-gradient-to-r from-amber-500 to-amber-600 text-white overflow-hidden">
-                <CardContent className="relative p-8">
-                  <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
-                    <Avatar className="w-24 h-24 border-4 border-white/20 shadow-lg">
-                      <AvatarImage src="" alt={user.name} />
-                      <AvatarFallback className="bg-white/20 text-white text-2xl font-bold">
-                        {getInitials(user.name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    
-                    <div className="flex-1 text-center md:text-left">
-                      <h1 className="text-3xl md:text-4xl font-bold mb-2">{user.name}</h1>
-                      <div className="flex flex-wrap gap-2 justify-center md:justify-start mb-4">
-                        <Badge variant="secondary" className="bg-white/20 text-white border-white/30">
-                          {user.type === "prestador" ? "Prestador de Serviços" : "Contratante"}
-                        </Badge>
-                        <Badge variant="secondary" className="bg-white/20 text-white border-white/30">
-                          <Calendar className="w-3 h-3 mr-1" />
-                          Membro desde 2024
-                        </Badge>
-                      </div>
-                      <p className="text-white/90 text-lg">
-                        {(user as any).about || "Bem-vindo ao seu perfil! Complete suas informações para uma melhor experiência."}
-                      </p>
-                    </div>
+        <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 flex items-center justify-center">
+          <div className="text-center space-y-6 bg-white/80 backdrop-blur-sm p-8 rounded-3xl border border-white/20 shadow-xl">
+            <div className="w-20 h-20 bg-gradient-to-br from-orange-100 to-amber-200 rounded-full flex items-center justify-center mx-auto">
+              <Loader2 className="h-10 w-10 text-orange-500 animate-spin" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-semibold text-slate-700">Carregando perfil...</h3>
+              <p className="text-slate-500">Aguarde enquanto carregamos suas informações.</p>
+            </div>
+          </div>
+        </div>
+      </AplicationLayout>
+    );
+  }
 
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
+  return (
+    <AplicationLayout>
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-8">
+          {/* Header do perfil */}
+          <Card className="relative overflow-hidden shadow-2xl border-0 rounded-3xl">
+            <div className="absolute inset-0 bg-gradient-to-br from-orange-600 via-amber-600 to-yellow-500" />
+            <div className="absolute inset-0 bg-black/10" />
+            
+            <CardContent className="relative p-6 sm:p-8 lg:p-12 text-white">
+              <div className="flex flex-col lg:flex-row items-center lg:items-start gap-6 lg:gap-8">
+                <Avatar className="w-32 h-32 sm:w-40 sm:h-40 border-4 border-white shadow-2xl">
+                  <AvatarFallback className="bg-white/20 backdrop-blur-sm text-white text-4xl sm:text-5xl font-bold">
+                    {user.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+
+                <div className="flex-1 text-center lg:text-left space-y-4 min-w-0">
+                  <div>
+                    <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-2 break-words">{user.name}</h1>
+                    <p className="text-lg sm:text-xl lg:text-2xl text-white/90 font-medium break-words">
+                      {user.type === "prestador" && providerData ? providerData.profession || "Prestador de Serviços" : "Usuário"}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap justify-center lg:justify-start gap-2 sm:gap-3">
+                    <Badge className="bg-white/20 backdrop-blur-sm text-white border-white/30 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium">
+                      <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
+                      {completionRate}% completo
+                    </Badge>
+                    {user.type === "prestador" && providerData && (
+                      <>
+                        <Badge className="bg-white/20 backdrop-blur-sm text-white border-white/30 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium">
+                          <Star className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 sm:mr-2 fill-current" />
+                          {providerData.rating_mid} estrelas
+                        </Badge>
+                        <Badge className="bg-white/20 backdrop-blur-sm text-white border-white/30 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium">
+                          <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
+                          {providerData.views_profile} visualizações
+                        </Badge>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap justify-center lg:justify-start gap-2 sm:gap-3 pt-4">
+                    <Button
                       onClick={logout}
-                      className="bg-white/10 border-white/30 text-white hover:bg-white/20 transition-all duration-200"
+                      variant="outline"
+                      className="border-white text-amber-600 hover:bg-white hover:text-orange-600 font-semibold px-4 py-2 sm:px-6 sm:py-2 rounded-xl transition-all duration-300 hover:scale-105 text-sm sm:text-base"
                     >
-                      <LogOut className="w-4 h-4 mr-2" />
+                      <LogOut className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
                       Sair
                     </Button>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Taxa de Conclusão do Perfil */}
-            <Card className="shadow-lg border-0">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5 text-amber-600" />
-                    Taxa de Conclusão do Perfil
-                  </h3>
-                  <Badge 
-                    variant={completionRate === 100 ? "default" : "secondary"}
-                    className={completionRate === 100 ? "bg-green-600" : "bg-amber-600"}
-                  >
-                    {completionRate}%
-                  </Badge>
                 </div>
-                <Progress value={completionRate} className="h-3 mb-2" />
-                <p className="text-sm text-slate-600">
-                  {completionRate === 100 
-                    ? "Parabéns! Seu perfil está completo." 
-                    : `Complete mais informações para melhorar sua visibilidade.`
-                  }
-                </p>
-              </CardContent>
-            </Card>
+              </div>
+            </CardContent>
+          </Card>
 
-            {/* Portfólio do prestador - POSICIONADO APÓS O HEADER E ANTES DAS INFORMAÇÕES */}
-            {user.type === "prestador" && (
-              <Card className="shadow-lg border-0">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                      <Grid3X3 className="w-6 h-6 text-amber-600" />
-                      Meus Destaques
-                    </CardTitle>
-                    {!isUploadingImage && !isCreatingPortfolioItem && (
-                      <Button 
-                        onClick={startImageUpload}
-                        className="bg-amber-600 hover:bg-amber-700 text-white"
-                      >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Adicionar Projeto
-                      </Button>
-                    )}
-                  </div>
+          {/* Progress bar */}
+          <Card className="shadow-xl border-0 rounded-3xl bg-white/80 backdrop-blur-sm">
+            <CardContent className="p-6">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-slate-700">Completude do Perfil</h3>
+                  <span className="text-sm font-medium text-slate-600">{completionRate}%</span>
+                </div>
+                <Progress value={completionRate} className="h-3" />
+                <p className="text-sm text-slate-500">
+                  Complete seu perfil para aumentar suas chances de ser encontrado por clientes.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Seções específicas para prestadores */}
+          {user.type === "prestador" && (
+            <>
+              {/* Seção de Portfólio */}
+              <Card className="shadow-xl border-0 rounded-3xl bg-white/80 backdrop-blur-sm">
+                <CardHeader className="pb-4">
+                  <CardTitle className="flex items-center gap-3 text-xl sm:text-2xl">
+                    <div className="p-2 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl">
+                      <Grid3X3 className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                    </div>
+                   Meus destaques 
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {/* ETAPA 1: Upload da imagem */}
-                  {isUploadingImage && (
-                    <Card className="mb-6 border-2 border-amber-200 bg-amber-50/50">
-                      <CardHeader>
-                        <CardTitle className="text-lg text-amber-800">Etapa 1: Enviar Imagem do Projeto</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <div>
-                          <label className="text-sm font-semibold text-slate-600 mb-2 block">
-                            Selecione a imagem do projeto *
-                          </label>
-                          <div className="border-2 border-dashed border-amber-300 rounded-lg p-6 text-center hover:border-amber-400 transition-colors">
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  handleImageUpload(file);
-                                }
-                              }}
-                              className="hidden"
-                              id="image-upload-input"
-                              disabled={uploadingImage}
-                            />
-                            <label
-                              htmlFor="image-upload-input"
-                              className={`cursor-pointer flex flex-col items-center gap-2 ${uploadingImage ? 'opacity-50' : ''}`}
+                  {loadingPortfolio ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {portfolio.length === 0 ? (
+                        <div className="text-center py-8 text-slate-500">
+                          <ImageIcon className="w-12 h-12 mx-auto mb-4" />
+                          <p>Nenhum item no portfólio ainda.</p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {portfolio.map((item) => (
+                            <div 
+                              key={item.id} 
+                              className="border rounded-lg overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
+                              onClick={() => openPortfolioModal(item)}
                             >
-                              {uploadingImage ? (
-                                <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
-                              ) : (
-                                <Upload className="w-8 h-8 text-amber-500" />
-                              )}
-                              <span className="text-sm text-slate-600">
-                                {uploadingImage ? "Enviando imagem..." : "Clique para selecionar uma imagem"}
-                              </span>
-                              <span className="text-xs text-slate-400">
-                                Formatos aceitos: JPG, PNG, GIF (máx. 5MB)
-                              </span>
-                            </label>
-                          </div>
-                        </div>
-                        
-                        <div className="flex gap-3 pt-4">
-                          <Button 
-                            variant="outline" 
-                            onClick={cancelImageUpload}
-                            className="flex-1 border-slate-300 hover:bg-slate-50"
-                            disabled={uploadingImage}
-                          >
-                            <X className="w-4 h-4 mr-2" />
-                            Cancelar
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* ETAPA 2: Adicionar título e descrição */}
-                  {isCreatingPortfolioItem && uploadedImageId && (
-                    <Card className="mb-6 border-2 border-green-200 bg-green-50/50">
-                      <CardHeader>
-                        <CardTitle className="text-lg text-green-800">Etapa 2: Adicionar Informações do Projeto</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        {/* Preview da imagem enviada */}
-                        {uploadedImageUrl && (
-                          <div className="mb-4">
-                            <label className="text-sm font-semibold text-slate-600 mb-2 block">
-                              Imagem enviada:
-                            </label>
-                            <div className="w-32 h-32 rounded-lg overflow-hidden border-2 border-green-300">
-                              <img
-                                src={uploadedImageUrl}
-                                alt="Preview"
-                                className="w-full h-full object-cover"
-                              />
+                              <div className="aspect-video bg-slate-100 flex items-center justify-center">
+                                {getImageUrl(item.image_id) ? (
+                                  <img 
+                                    src={getImageUrl(item.image_id)} 
+                                    alt={item.title}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <ImageIcon className="w-12 h-12 text-slate-400" />
+                                )}
+                              </div>
+                              <div className="p-4">
+                                <h4 className="font-semibold">{item.title}</h4>
+                                <p className="text-sm text-slate-600 mt-1 line-clamp-2">{item.description}</p>
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
-                        <div>
-                          <label className="text-sm font-semibold text-slate-600 mb-2 block">
-                            Título do Projeto *
-                          </label>
+              {/* Seção de Serviços */}
+              <Card className="shadow-xl border-0 rounded-3xl bg-white/80 backdrop-blur-sm">
+                <CardHeader className="pb-4">
+                  <CardTitle className="flex items-center gap-3 text-xl sm:text-2xl">
+                    <div className="p-2 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl">
+                      <Briefcase className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                    </div>
+                    Meus Serviços
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {loadingServices ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+                    </div>
+                  ) : errorServices ? (
+                    <div className="text-center py-8 text-red-600">
+                      <AlertCircle className="w-12 h-12 mx-auto mb-4" />
+                      <p>Erro ao carregar serviços: {errorServices}</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {services.length === 0 ? (
+                        <div className="text-center py-8 text-slate-500">
+                          <Briefcase className="w-12 h-12 mx-auto mb-4" />
+                          <p>Nenhum serviço cadastrado ainda.</p>
+                        </div>
+                      ) : (
+                        services.map((service) => (
+                          <div key={service.id_serviceFreelancer} className="p-4 border rounded-lg">
+                            <h4 className="font-semibold text-lg">{service.title}</h4>
+                            <p className="text-slate-600 mt-2">{service.description}</p>
+                            <p className="text-orange-600 font-bold mt-2">R$ {service.price}</p>
+                          </div>
+                        ))
+                      )}
+                      <Button
+                        onClick={() => setIsCreating(!isCreating)}
+                        className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-semibold py-2 rounded-xl shadow-lg transition-all duration-300"
+                      >
+                        {isCreating ? "Cancelar" : "Adicionar Novo Serviço"}
+                      </Button>
+                      {isCreating && (
+                        <div className="space-y-4 mt-4 p-4 border rounded-lg bg-slate-50">
                           <Input
-                            value={portfolioItemData.title}
-                            onChange={(e) => setPortfolioItemData(prev => ({ ...prev, title: e.target.value }))}
-                            placeholder="Ex: Projeto de design de interiores"
-                            className="border-green-200 focus:border-green-400 focus:ring-green-400"
+                            placeholder="Título do Serviço"
+                            value={newService.title}
+                            onChange={(e) => setNewService({ ...newService, title: e.target.value })}
                           />
-                        </div>
-                        
-                        <div>
-                          <label className="text-sm font-semibold text-slate-600 mb-2 block">
-                            Descrição (opcional)
-                          </label>
                           <Textarea
-                            value={portfolioItemData.description}
-                            onChange={(e) => setPortfolioItemData(prev => ({ ...prev, description: e.target.value }))}
-                            placeholder="Descreva o projeto, técnicas utilizadas, resultados obtidos... (opcional)"
-                            className="min-h-[100px] resize-none border-green-200 focus:border-green-400 focus:ring-green-400"
+                            placeholder="Descrição do Serviço"
+                            value={newService.description}
+                            onChange={(e) => setNewService({ ...newService, description: e.target.value })}
                           />
-                        </div>
-                        
-                        <div className="flex gap-3 pt-4">
-                          <Button 
-                            variant="outline" 
-                            onClick={cancelPortfolioItemCreation}
-                            className="flex-1 border-slate-300 hover:bg-slate-50"
-                            disabled={creatingPortfolioItem}
+                          <Input
+                            placeholder="Preço (ex: 150.00)"
+                            type="number"
+                            value={newService.price}
+                            onChange={(e) => setNewService({ ...newService, price: e.target.value })}
+                          />
+                          <Button
+                            onClick={handleCreateService}
+                            disabled={creatingService}
+                            className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 rounded-xl shadow-lg transition-all duration-300 hover:scale-105"
                           >
-                            <X className="w-4 h-4 mr-2" />
-                            Cancelar
-                          </Button>
-                          <Button 
-                            onClick={createPortfolioItem}
-                            className="flex-1 bg-green-600 hover:bg-green-700 text-white"
-                            disabled={creatingPortfolioItem}
-                          >
-                            {creatingPortfolioItem ? (
-                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            {creatingService ? (
+                              <Loader2 className="w-4 h-4 animate-spin mr-2" />
                             ) : (
                               <Save className="w-4 h-4 mr-2" />
                             )}
-                            {creatingPortfolioItem ? "Salvando..." : "Salvar Projeto"}
+                            {creatingService ? "Criando..." : "Salvar Serviço"}
                           </Button>
                         </div>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {loadingPortfolio ? (
-                    <div className="flex items-center justify-center py-12">
-                      <Loader2 className="animate-spin text-amber-600 w-8 h-8 mr-3" />
-                      <span className="text-slate-600">Carregando portfólio...</span>
-                    </div>
-                  ) : portfolio.length === 0 ? (
-                    <div className="text-center py-12">
-                      <ImageIcon className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-                      <h3 className="text-lg font-semibold text-slate-600 mb-2">Nenhum projeto no portfólio</h3>
-                      <p className="text-slate-500 mb-4">Adicione seus primeiros projetos para mostrar seu trabalho aos clientes.</p>
-                      {!isUploadingImage && !isCreatingPortfolioItem && (
-                        <Button 
-                          onClick={startImageUpload}
-                          className="bg-amber-600 hover:bg-amber-700 text-white"
-                        >
-                          <Plus className="w-4 h-4 mr-2" />
-                          Adicionar Primeiro Projeto
-                        </Button>
                       )}
                     </div>
-                  ) : (
-                    <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">
-                      {portfolio
-                        .sort((a, b) => new Date(b.created_at || b.created_at).getTime() - new Date(a.created_at || a.created_at).getTime())
-                        .map((item) => {
-                          const imageUrl = getImageUrl(item.image_id);
-                          return (
-                            <Card key={item.id} className="group relative overflow-hidden rounded-lg shadow-lg hover:shadow-xl transition-all duration-300">
-                              <div 
-                                className="aspect-square bg-gray-200 cursor-pointer"
-                                onClick={() => openPortfolioModal(item)}
-                              >
-                                <img
-                                  src={imageUrl}
-                                  alt={item.title}
-                                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
-                                  onError={() => console.log("Erro ao carregar imagem:", imageUrl)}
-                                />
-                                {/* Overlay escurecido no hover */}
-                                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                              </div>
-                              <Button
-                                size="icon"
-                                variant="destructive"
-                                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10 h-8 w-8"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeletePortfolioItem(item.id);
-                                }}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </Card>
-                        );
-                      })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                  )}
+                </CardContent>
+              </Card>
+            </>
           )}
 
-          {/* Layout principal com sidebar */}
-          <div className="grid lg:grid-cols-3 gap-8">
-            {/* Conteúdo principal */}
-            <div className="lg:col-span-2 space-y-6">
-              {/* Informações do Perfil */}
-              <Card className="shadow-lg border-0">
-                <CardHeader className="pb-4">
-                  <CardTitle className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                    <User className="w-6 h-6 text-amber-600" />
-                    Informações Pessoais
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {profileFields.map((f, index) => {
-                    const isEditing = editingField === f.key;
-                    const Icon = f.icon;
-                    
-                    return (
-                      <div key={f.key}>
-                        {index > 0 && <Separator className="my-4" />}
-                        <div className="group">
-                          <div className="flex items-start gap-4">
-                            <div className="p-2 bg-amber-50 rounded-lg">
-                              <Icon className="w-5 h-5 text-amber-600" />
-                            </div>
-                            
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between mb-2">
-                                <label className="text-sm font-semibold text-slate-600 uppercase tracking-wide">
-                                  {f.label}
-                                </label>
-                                {f.editable && !isEditing && (
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                                    onClick={() => startEditField(f.key, String(f.value))}
-                                  >
-                                    <Edit2 className="w-4 h-4" />
-                                  </Button>
-                                )}
-                              </div>
-                              
-                              {isEditing ? (
-                                <div className="space-y-3">
-                                  {f.key === "about" ? (
-                                    <Textarea
-                                      value={draftValue}
-                                      onChange={(e) => setDraftValue(e.target.value)}
-                                      className="min-h-[100px] resize-none border-amber-200 focus:border-amber-400 focus:ring-amber-400"
-                                      placeholder="Conte um pouco sobre você, suas habilidades e experiências..."
-                                    />
-                                  ) : f.key === "cpf" ? (
-                                    <Input
-                                      value={draftValue}
-                                      onChange={(e) => {
-                                        const formatted = formatCPF(e.target.value);
-                                        if (formatted.length <= 14) {
-                                          setDraftValue(formatted);
-                                        }
-                                      }}
-                                      className="border-amber-200 focus:border-amber-400 focus:ring-amber-400"
-                                      placeholder="000.000.000-00"
-                                      maxLength={14}
-                                    />
-                                  ) : f.key === "cnpj" ? (
-                                    <Input
-                                      value={draftValue}
-                                      onChange={(e) => {
-                                        const formatted = formatCNPJ(e.target.value);
-                                        if (formatted.length <= 18) {
-                                          setDraftValue(formatted);
-                                        }
-                                      }}
-                                      className="border-amber-200 focus:border-amber-400 focus:ring-amber-400"
-                                      placeholder="00.000.000/0000-00"
-                                      maxLength={18}
-                                    />
-                                  ) : f.key === "cep" ? (
-                                    <div className="relative">
-                                      <Input
-                                        value={draftValue}
-                                        onChange={(e) => handleCepChange(e.target.value)}
-                                        className="border-amber-200 focus:border-amber-400 focus:ring-amber-400"
-                                        placeholder="00000-000"
-                                        maxLength={9}
-                                      />
-                                      {loadingCep && (
-                                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                                          <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
-                                        </div>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <Input
-                                      value={draftValue}
-                                      onChange={(e) => setDraftValue(e.target.value)}
-                                      className="border-amber-200 focus:border-amber-400 focus:ring-amber-400"
-                                      placeholder={`Digite seu ${f.label.toLowerCase()}`}
-                                    />
-                                  )}
-                                  <div className="flex gap-2">
-                                    <Button 
-                                      size="sm" 
-                                      variant="outline" 
-                                      onClick={cancelEditField}
-                                      className="border-slate-300 hover:bg-slate-50"
-                                    >
-                                      <X className="w-4 h-4 mr-1" />
-                                      Cancelar
-                                    </Button>
-                                    <Button 
-                                      size="sm" 
-                                      onClick={saveField}
-                                      className="bg-amber-600 hover:bg-amber-700 text-white"
-                                    >
-                                      <Check className="w-4 h-4 mr-1" />
-                                      Salvar
-                                    </Button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <p className="text-slate-800 text-lg leading-relaxed">
-                                  {f.value}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {/* Campos de endereço adicionais */}
-                  {addressData.cep && (
-                    <>
-                      <Separator className="my-4" />
-                      <div className="group">
-                        <div className="flex items-start gap-4">
-                          <div className="p-2 bg-amber-50 rounded-lg">
-                            <MapPin className="w-5 h-5 text-amber-600" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between mb-2">
-                              <label className="text-sm font-semibold text-slate-600 uppercase tracking-wide">
-                                Número da Residência
-                              </label>
-                              {editingField !== "numero" && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                                  onClick={() => startEditField("numero", addressData.numero)}
-                                >
-                                  <Edit2 className="w-4 h-4" />
-                                </Button>
-                              )}
-                            </div>
-                            
-                            {editingField === "numero" ? (
-                              <div className="space-y-3">
-                                <Input
-                                  value={draftValue}
-                                  onChange={(e) => setDraftValue(e.target.value)}
-                                  className="border-amber-200 focus:border-amber-400 focus:ring-amber-400"
-                                  placeholder="123"
-                                />
-                                <div className="flex gap-2">
-                                  <Button 
-                                    size="sm" 
-                                    variant="outline" 
-                                    onClick={cancelEditField}
-                                    className="border-slate-300 hover:bg-slate-50"
-                                  >
-                                    <X className="w-4 h-4 mr-1" />
-                                    Cancelar
-                                  </Button>
-                                  <Button 
-                                    size="sm" 
-                                    onClick={saveField}
-                                    className="bg-amber-600 hover:bg-amber-700 text-white"
-                                  >
-                                    <Check className="w-4 h-4 mr-1" />
-                                    Salvar
-                                  </Button>
-                                </div>
-                              </div>
-                            ) : (
-                              <p className="text-slate-800 text-lg leading-relaxed">
-                                {addressData.numero || "Não informado"}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Sidebar com estatísticas */}
-            <div className="space-y-6">
-              <Card className="shadow-lg border-0">
-                <CardHeader>
-                  <CardTitle className="text-xl font-bold text-slate-800">Estatísticas</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="text-center p-4 bg-amber-50 rounded-lg">
-                    <div className="text-3xl font-bold text-amber-600">
-                      {user.type === "prestador" ? services.length : "0"}
-                    </div>
-                    <div className="text-sm text-slate-600">
-                      {user.type === "prestador" ? "Serviços Ativos" : "Demandas Ativas"}
-                    </div>
-                  </div>
-                  
-                  {user.type === "prestador" && (
-                    <div className="text-center p-4 bg-purple-50 rounded-lg">
-                      <div className="text-3xl font-bold text-purple-600">{portfolio.length}</div>
-                      <div className="text-sm text-slate-600">Projetos em Destaque</div>
-                    </div>
-                  )}
-                  
-                  <div className="text-center p-4 bg-blue-50 rounded-lg">
-                    <div className="text-3xl font-bold text-blue-600">4.8</div>
-                    <div className="text-sm text-slate-600">Avaliação Média</div>
-                  </div>
-                  
-                  <div className="text-center p-4 bg-green-50 rounded-lg">
-                    <div className="text-3xl font-bold text-green-600">{completionRate}%</div>
-                    <div className="text-sm text-slate-600">Taxa de Conclusão</div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-
-          {/* Demandas do contratante */}
-          {user.type === "contratante" && <DemandsManager />}
-
-          {/* Serviços do freelancer */}
-          {user.type === "prestador" && (
-            <Card className="shadow-lg border-0">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                    <Briefcase className="w-6 h-6 text-amber-600" />
-                    Meus Serviços
-                  </CardTitle>
-                  {!isCreating && (
-                    <Button 
-                      onClick={startCreating}
-                      className="bg-amber-600 hover:bg-amber-700 text-white"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Novo Serviço
-                    </Button>
-                  )}
+          {/* Campos do perfil */}
+          <Card className="shadow-xl border-0 rounded-3xl bg-white/80 backdrop-blur-sm">
+            <CardHeader className="pb-4">
+              <CardTitle className="flex items-center gap-3 text-xl sm:text-2xl">
+                <div className="p-2 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl">
+                  <User className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                 </div>
-              </CardHeader>
-              <CardContent>
-                {/* Formulário de criação de serviço */}
-                {isCreating && (
-                  <Card className="mb-6 border-2 border-amber-200 bg-amber-50/50">
-                    <CardHeader>
-                      <CardTitle className="text-lg text-amber-800">Criar Novo Serviço</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div>
-                        <label className="text-sm font-semibold text-slate-600 mb-2 block">
-                          Título do Serviço *
-                        </label>
-                        <Input
-                          value={newService.title}
-                          onChange={(e) => setNewService(prev => ({ ...prev, title: e.target.value }))}
-                          placeholder="Ex: Instalação de ventilador de teto"
-                          className="border-amber-200 focus:border-amber-400 focus:ring-amber-400"
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className="text-sm font-semibold text-slate-600 mb-2 block">
-                          Descrição *
-                        </label>
-                        <Textarea
-                          value={newService.description}
-                          onChange={(e) => setNewService(prev => ({ ...prev, description: e.target.value }))}
-                          placeholder="Descreva detalhadamente o serviço que você oferece..."
-                          className="min-h-[100px] resize-none border-amber-200 focus:border-amber-400 focus:ring-amber-400"
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className="text-sm font-semibold text-slate-600 mb-2 block">
-                          Preço (R$) *
-                        </label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={newService.price}
-                          onChange={(e) => setNewService(prev => ({ ...prev, price: e.target.value }))}
-                          placeholder="180.00"
-                          className="border-amber-200 focus:border-amber-400 focus:ring-amber-400"
-                        />
-                      </div>
-                      
-                      <div className="flex gap-3 pt-4">
-                        <Button 
-                          variant="outline" 
-                          onClick={cancelCreating}
-                          className="flex-1 border-slate-300 hover:bg-slate-50"
-                          disabled={creatingService}
-                        >
-                          <X className="w-4 h-4 mr-2" />
-                          Cancelar
-                        </Button>
-                        <Button 
-                          onClick={createService}
-                          className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
-                          disabled={creatingService}
-                        >
-                          {creatingService ? (
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          ) : (
-                            <Save className="w-4 h-4 mr-2" />
-                          )}
-                          {creatingService ? "Criando..." : "Criar Serviço"}
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {loadingServices ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="animate-spin text-amber-600 w-8 h-8 mr-3" />
-                    <span className="text-slate-600">Carregando serviços...</span>
-                  </div>
-                ) : errorServices ? (
-                  <div className="flex items-center justify-center py-12 text-red-600">
-                    <AlertCircle className="w-6 h-6 mr-2" />
-                    <span>Erro ao carregar serviços: {errorServices}</span>
-                  </div>
-                ) : services.length === 0 ? (
-                  <div className="text-center py-12">
-                    <Briefcase className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold text-slate-600 mb-2">Nenhum serviço cadastrado</h3>
-                    <p className="text-slate-500 mb-4">Cadastre seus primeiros serviços para começar a receber clientes.</p>
-                    {!isCreating && (
-                      <Button 
-                        onClick={startCreating}
-                        className="bg-amber-600 hover:bg-amber-700 text-white"
+                Informações Pessoais
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {profileFields.map((field, index) => (
+                <div key={field.key} className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <field.icon className="w-5 h-5 text-slate-500" />
+                      <span className="font-medium text-slate-700">{field.label}</span>
+                    </div>
+                    {field.editable && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => startEditField(field.key, field.value)}
+                        className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
                       >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Criar Primeiro Serviço
+                        <Edit2 className="w-4 h-4" />
                       </Button>
                     )}
                   </div>
-                ) : (
-                  <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {services.map((svc) => {
-                      const isEditingSvc = svc.id_serviceFreelancer === editingId;
-                      
-                      return (
-                        <Card key={svc.id_serviceFreelancer} className="group hover:shadow-lg transition-all duration-200 border-slate-200">
-                          <CardContent className="p-6">
-                            {isEditingSvc ? (
-                              <div className="space-y-4">
-                                <Input
-                                  value={draftSvc.title}
-                                  onChange={(e) =>
-                                    setDraftSvc((d) => ({ ...d, title: e.target.value }))
-                                  }
-                                  placeholder="Título do serviço"
-                                  className="font-semibold border-amber-200 focus:border-amber-400"
-                                />
-                                <Textarea
-                                  value={draftSvc.description}
-                                  onChange={(e) =>
-                                    setDraftSvc((d) => ({ ...d, description: e.target.value }))
-                                  }
-                                  placeholder="Descrição do serviço"
-                                  className="min-h-[80px] resize-none border-amber-200 focus:border-amber-400"
-                                />
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
-                                  value={draftSvc.price}
-                                  onChange={(e) =>
-                                    setDraftSvc((d) => ({ ...d, price: e.target.value }))
-                                  }
-                                  placeholder="Preço"
-                                  className="border-amber-200 focus:border-amber-400"
-                                />
-                                <div className="flex gap-2 pt-2">
-                                  <Button 
-                                    size="sm" 
-                                    variant="outline" 
-                                    onClick={cancelEditSvc}
-                                    className="flex-1"
-                                  >
-                                    <X className="w-4 h-4 mr-1" />
-                                    Cancelar
-                                  </Button>
-                                  <Button 
-                                    size="sm" 
-                                    onClick={saveSvc}
-                                    className="flex-1 bg-amber-600 hover:bg-amber-700"
-                                  >
-                                    <Check className="w-4 h-4 mr-1" />
-                                    Salvar
-                                  </Button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="space-y-4">
-                                <div className="flex items-start justify-between">
-                                  <h3 className="text-lg font-bold text-slate-800 line-clamp-2 flex-1">
-                                    {svc.title}
-                                  </h3>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-amber-600 hover:text-amber-700 hover:bg-amber-50 ml-2"
-                                    onClick={() => startEditSvc(svc)}
-                                  >
-                                    <Edit2 className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                                
-                                <p className="text-slate-600 line-clamp-3 leading-relaxed">
-                                  {svc.description}
-                                </p>
-                                
-                                <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                                  <div className="flex items-center gap-1 text-green-600 font-bold text-lg">
-                                    <DollarSign className="w-5 h-5" />
-                                    R$ {parseFloat(svc.price).toFixed(2)}
-                                  </div>
-                                  <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200">
-                                    Ativo
-                                  </Badge>
-                                </div>
-                              </div>
-                            )}
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
+                  
+                  {editingField === field.key ? (
+                    <div className="flex gap-2">
+                      {field.key === "about" ? (
+                        <Textarea
+                          value={draftValue}
+                          onChange={(e) => setDraftValue(e.target.value)}
+                          className="flex-1"
+                          rows={3}
+                        />
+                      ) : (
+                        <Input
+                          value={draftValue}
+                          onChange={(e) => {
+                            let value = e.target.value;
+                            if (field.mask) {
+                              if (field.key === "cpf") value = formatCPF(value);
+                              else if (field.key === "cnpj") value = formatCNPJ(value);
+                              else if (field.key === "cep") value = formatCEP(value);
+                            }
+                            setDraftValue(value);
+                          }}
+                          className="flex-1"
+                        />
+                      )}
+                      <Button
+                        size="sm"
+                        onClick={saveField}
+                        className="bg-green-600 hover:bg-green-700 text-white"
+                      >
+                        <Check className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={cancelEditField}
+                        className="border-red-300 text-red-600 hover:bg-red-50"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-slate-600 ml-8">{field.value}</p>
+                  )}
+                  
+                  {index < profileFields.length - 1 && <Separator />}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
         </div>
-      </div>
 
-      {/* Modal do Portfólio */}
-      <PortfolioModal
-        isOpen={isModalOpen}
-        onClose={closePortfolioModal}
-        item={selectedPortfolioItem}
-        imageUrl={selectedPortfolioItem ? getImageUrl(selectedPortfolioItem.image_id) : ""}
-        userName={user.name}
-        onDelete={handleDeletePortfolioItem}
-      />
-    </AplicationLayout> 
+        {/* Modal do Portfólio */}
+        {isModalOpen && selectedPortfolioItem && (
+          <PortfolioModal 
+            isOpen={isModalOpen}
+            item={selectedPortfolioItem}
+            imageUrl={getImageUrl(selectedPortfolioItem.image_id)}
+            onClose={closePortfolioModal}
+            onDelete={handleDeletePortfolioItem}
+          />
+        )}
+      </div>
+    </AplicationLayout>
   );
 }
 

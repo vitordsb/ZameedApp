@@ -62,16 +62,7 @@ export default function PortfolioModal({
   ]);
 
   if (!isOpen || !item) return null;
-
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  };
-
+  
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString);
@@ -177,7 +168,7 @@ export default function PortfolioModal({
                 <Avatar className="w-8 h-8 border-2 border-white/50">
                   <AvatarImage src={userAvatar} alt={userName} />
                   <AvatarFallback className="bg-white/20 text-white text-sm">
-                    {getInitials(userName)}
+                    {userName}
                   </AvatarFallback>
                 </Avatar>
                 <span className="text-white font-medium">{userName}</span>
@@ -225,7 +216,7 @@ export default function PortfolioModal({
                   <div key={comment.id} className="flex gap-3">
                     <Avatar className="w-8 h-8 flex-shrink-0">
                       <AvatarFallback className="bg-gray-100 text-gray-600 text-xs">
-                        {getInitials(comment.user)}
+                          {comment.user}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1 min-w-0">
@@ -245,7 +236,7 @@ export default function PortfolioModal({
                   <Avatar className="w-8 h-8 flex-shrink-0">
                     <AvatarImage src={userAvatar} alt={userName} />
                     <AvatarFallback className="bg-amber-100 text-amber-700 text-xs">
-                      {getInitials(userName)}
+                      {userName}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 flex gap-2">

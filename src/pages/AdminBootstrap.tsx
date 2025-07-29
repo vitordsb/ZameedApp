@@ -8,17 +8,17 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 
-export default function AdminBootstrap() {
-  const { toast } = useToast();
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("password123");
-  const [confirmPassword, setConfirmPassword] = useState("password123");
-  const [name, setName] = useState("Administrator");
-  const [email, setEmail] = useState("admin@example.com");
+  export default function AdminBootstrap() {
+    const { toast } = useToast();
+    const [username, setUsername] = useState("admin");
+    const [password, setPassword] = useState("password123");
+    const [confirmPassword, setConfirmPassword] = useState("password123");
+    const [name, setName] = useState("Administrator");
+    const [email, setEmail] = useState("admin@example.com");
 
-  const bootstrapMutation = useMutation({
-    mutationFn: async (data: any) => {
-      const res = await apiRequest("POST", "/api/admin/bootstrap", data);
+    const bootstrapMutation = useMutation({
+      mutationFn: async (data: any) => {
+        const res = await apiRequest("POST", "/api/admin/bootstrap", data);
       return await res.json();
     },
     onSuccess: (data) => {

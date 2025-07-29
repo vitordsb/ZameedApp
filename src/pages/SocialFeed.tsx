@@ -2,7 +2,7 @@
 // src/pages/SocialFeed.tsx
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueries } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
 import ApplicationLayout from "@/components/layouts/ApplicationLayout";
 import { Input } from "@/components/ui/input";
@@ -36,11 +36,14 @@ import {
   Clock,
   Calendar,
   User,
-  Crown,
-  Sparkles,
+  Settings,
+  UserCheck,
+  Home,
 } from "lucide-react";
 import { apiRequest} from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
+import { useMessaging } from "@/hooks/use-messaging";
 
 interface Provider {
   provider_id: number;
@@ -136,6 +139,11 @@ export default function SocialFeed() {
   const [serviceFilter, setServiceFilter] = useState("");
   const [currentSlide, setCurrentSlide] = useState(0);
   const { user: currentUser } = useAuth();
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+
+  // CORREÇÃO: Usar o hook useMessaging para acessar startConversationAndNavigate
+  const { startConversationAndNavigate } = useMessaging();
 
   // Carrossel automático
   useEffect(() => {
@@ -144,6 +152,34 @@ export default function SocialFeed() {
     }, 5000);
     return () => clearInterval(timer);
   }, []);
+
+  // CORREÇÃO: Função para iniciar conversa usando o hook
+  const handleStartConversation = async (targetUserId: number) => {
+    if (!currentUser) {
+      toast({
+        title: "Login necessário",
+        description: "Você precisa estar logado para enviar mensagens.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      console.log('Iniciando conversa com usuário:', targetUserId);
+      await startConversationAndNavigate(targetUserId, setLocation);
+      toast({
+        title: "Conversa iniciada",
+        description: "Redirecionando para suas mensagens...",
+      });
+    } catch (error) {
+      console.error("Erro ao iniciar conversa:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível iniciar a conversa. Tente novamente.",
+        variant: "destructive"
+      });
+    }
+  };
 
   // 1) Busca lista de providers
   const { data: provRes, isLoading: loadingProv, isError: errProv } =
@@ -228,8 +264,8 @@ export default function SocialFeed() {
   }, [providers, userQueries, loadingProv, loadingUsers]);
 
   // 5) Filtra apenas prestadores + aplica filtros de busca e serviço
-  // MODIFICAÇÃO: INCLUINDO TODOS OS PRESTADORES (inclusive o usuário logado)
-  const list = useMemo(
+  // MODIFICAÇÃO: Removido o filtro que exclui o usuário logado
+  const allProviders = useMemo(
     () =>
       combined
         .filter(({ user }) => user.type === "prestador")
@@ -240,8 +276,46 @@ export default function SocialFeed() {
           const matchService = !serviceFilter || provider.profession === serviceFilter;
           return matchSearch && matchService;
         }),
-    [combined, search, serviceFilter] // Removido currentUser?.id da dependência
+    [combined, search, serviceFilter]
   );
+
+  // NOVA LÓGICA: Separar lista para exibição e detectar se só tem o usuário logado
+  const { list, showOnlyCurrentUser } = useMemo(() => {
+    // Se não há usuário logado, mostrar todos
+    if (!currentUser) {
+      return { 
+        list: allProviders, 
+        showOnlyCurrentUser: false 
+      };
+    }
+
+    // Separar usuário logado dos outros
+    const currentUserProvider = allProviders.find(({ user }) => user.id === currentUser.id);
+    const otherProviders = allProviders.filter(({ user }) => user.id !== currentUser.id);
+
+    // Se há outros prestadores, mostrar apenas eles (comportamento original)
+    if (otherProviders.length > 0) {
+      return { 
+        list: otherProviders, 
+        showOnlyCurrentUser: false 
+      };
+    }
+
+    // Se só tem o usuário logado, indicar isso
+    if (currentUserProvider) {
+      return { 
+        list: [], 
+        showOnlyCurrentUser: true,
+        currentUserProvider 
+      };
+    }
+
+    // Se não há nenhum prestador
+    return { 
+      list: [], 
+      showOnlyCurrentUser: false 
+    };
+  }, [allProviders, currentUser]);
 
   // 6) Processa serviços freelancer mais recentes - Ajustado para nova estrutura
   const recentServices = useMemo(() => {
@@ -261,19 +335,19 @@ export default function SocialFeed() {
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
+    return date.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric"
     });
   };
 
   const formatPrice = (priceString: string) => {
     // Converte string para número e formata
     const price = parseFloat(priceString);
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL"
     }).format(price);
   };
 
@@ -282,24 +356,19 @@ export default function SocialFeed() {
     const titleLower = title.toLowerCase();
     const descLower = description.toLowerCase();
     
-    if (titleLower.includes('3d') || titleLower.includes('render') || descLower.includes('render')) {
-      return 'Renderização 3D';
-    } else if (titleLower.includes('interior') || descLower.includes('interior')) {
-      return 'Design de Interiores';
-    } else if (titleLower.includes('comercial') || descLower.includes('comercial') || descLower.includes('loja')) {
-      return 'Design Comercial';
-    } else if (titleLower.includes('consultoria') || descLower.includes('consultoria')) {
-      return 'Consultoria';
-    } else if (titleLower.includes('jardim') || titleLower.includes('paisag') || descLower.includes('paisag')) {
-      return 'Paisagismo';
+    if (titleLower.includes("3d") || titleLower.includes("render") || descLower.includes("render")) {
+      return "Renderização 3D";
+    } else if (titleLower.includes("interior") || descLower.includes("interior")) {
+      return "Design de Interiores";
+    } else if (titleLower.includes("comercial") || descLower.includes("comercial") || descLower.includes("loja")) {
+      return "Design Comercial";
+    } else if (titleLower.includes("consultoria") || descLower.includes("consultoria")) {
+      return "Consultoria";
+    } else if (titleLower.includes("jardim") || titleLower.includes("paisag") || descLower.includes("paisag")) {
+      return "Paisagismo";
     } else {
-      return 'Arquitetura';
+      return "Arquitetura";
     }
-  };
-
-  // Função para verificar se é o usuário logado
-  const isCurrentUser = (userId: number) => {
-    return currentUser && currentUser.id === userId;
   };
 
   // CORREÇÃO: Melhor tratamento de estados de loading e erro
@@ -431,431 +500,277 @@ export default function SocialFeed() {
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto px-6 py-12">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.6 }}
-          >
-            <Card className="mb-12 shadow-xl border-0 bg-white/80 backdrop-blur">
-              <CardHeader className="pb-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Filter className="w-5 h-5 text-amber-600" />
-                  <CardTitle className="text-amber-900">
-                    Encontre o Profissional Perfeito
-                  </CardTitle>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
+          {/* Barra de Pesquisa e Filtros */}
+          <Card className="mb-8 shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+            <CardContent className="p-6">
+              <div className="flex flex-col md:flex-row gap-4">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                  <Input
+                    placeholder="Buscar por nome ou profissão..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="pl-10 h-12 border-slate-200 focus:border-orange-400 focus:ring-orange-400"
+                  />
                 </div>
+                <div className="flex gap-2">
+                  <select
+                    value={serviceFilter}
+                    onChange={(e) => setServiceFilter(e.target.value)}
+                    className="px-4 py-3 border border-slate-200 rounded-lg focus:border-orange-400 focus:ring-orange-400 bg-white"
+                  >
+                    <option value="">Todos os serviços</option>
+                    {servicesList.map((service) => (
+                      <option key={service} value={service}>
+                        {service}
+                      </option>
+                    ))}
+                  </select>
+                  <Button variant="outline" className="px-6 border-slate-200 hover:bg-orange-50 hover:border-orange-300">
+                    <Filter className="h-4 w-4 mr-2" />
+                    Filtros
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Estatísticas Rápidas */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0 shadow-lg">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-blue-100 text-sm font-medium">Total Prestadores</p>
+                    <p className="text-3xl font-bold">{allProviders.length}</p>
+                  </div>
+                  <Users className="h-8 w-8 text-blue-200" />
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white border-0 shadow-lg">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-green-100 text-sm font-medium">Projetos Ativos</p>
+                    <p className="text-3xl font-bold">{recentServices.length}</p>
+                  </div>
+                  <Briefcase className="h-8 w-8 text-green-200" />
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white border-0 shadow-lg">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-purple-100 text-sm font-medium">Avaliação Média</p>
+                    <p className="text-3xl font-bold">4.8</p>
+                  </div>
+                  <Star className="h-8 w-8 text-purple-200" />
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white border-0 shadow-lg">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-orange-100 text-sm font-medium">Taxa de Sucesso</p>
+                    <p className="text-3xl font-bold">96%</p>
+                  </div>
+                  <TrendingUp className="h-8 w-8 text-orange-200" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Seção de Serviços Recentes */}
+          {recentServices.length > 0 && (
+            <Card className="mb-8 shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-slate-800">
+                  <Zap className="h-5 w-5 text-orange-500" />
+                  Serviços Recentes
+                </CardTitle>
                 <CardDescription>
-                  Use os filtros abaixo para encontrar arquitetos que atendam
-                  exatamente às suas necessidades
+                  Confira os últimos serviços adicionados pelos nossos prestadores
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {/* Campos de pesquisa ajustados - removido filtro de avaliação */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Search */}
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <Input
-                      placeholder="Buscar por nome ou especialidade"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      className="pl-10 focus:border-amber-500 focus:ring-amber-500"
-                    />
-                  </div>
-                  {/* Location */}
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 z-10" />
-                    <select
-                      value={locationFilter}
-                      onChange={(e) => setLocationFilter(e.target.value)}
-                      className="pl-10 w-full border p-2 rounded focus:border-amber-500"
-                    >
-                      <option value="">Localização</option>
-                      {locations.map((l) => (
-                        <option key={l.value} value={l.value}>
-                          {l.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {/* Service */}
-                  <div className="relative">
-                    <Briefcase className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 z-10" />
-                    <select
-                      value={serviceFilter}
-                      onChange={(e) => setServiceFilter(e.target.value)}
-                      className="pl-10 w-full border p-2 rounded focus:border-amber-500"
-                    >
-                      <option value="">Serviço</option>
-                      {servicesList.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {recentServices.map((service) => (
+                    <Card key={service.id_serviceFreelancer} className="border border-slate-200 hover:shadow-md transition-shadow">
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between mb-3">
+                          <Badge variant="secondary" className="bg-orange-100 text-orange-700">
+                            {getServiceCategory(service.title, service.description)}
+                          </Badge>
+                          <span className="text-sm text-slate-500">
+                            {formatDate(service.createdAt)}
+                          </span>
+                        </div>
+                        <h3 className="font-semibold text-slate-800 mb-2 line-clamp-2">
+                          {service.title}
+                        </h3>
+                        <p className="text-sm text-slate-600 mb-3 line-clamp-2">
+                          {service.description}
+                        </p>
+                        <div className="flex items-center justify-between">
+                          <span className="text-lg font-bold text-green-600">
+                            {formatPrice(service.price)}
+                          </span>
+                          <Button size="sm" variant="outline" className="text-orange-600 border-orange-200 hover:bg-orange-50">
+                            Ver Detalhes
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
                 </div>
-
-                {(search || locationFilter || serviceFilter) && (
-                  <div className="mt-4 flex items-center gap-2">
-                    <span className="text-sm text-gray-600">Filtros ativos:</span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setSearch("");
-                        setLocationFilter("");
-                        setServiceFilter("");
-                      }}
-                      className="text-amber-600 border-amber-200 hover:bg-amber-50"
-                    >
-                      Limpar todos
-                    </Button>
-                  </div>
-                )}
               </CardContent>
             </Card>
-          </motion.div>
+          )}
 
-          {/* Lista de Architects */}
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-            <section className="lg:col-span-3">
-              <div className="mb-6 flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-gray-900">
-                  {list.length} Arquitetos Encontrados
-                </h2>
-                <Badge className="bg-amber-100 text-amber-700 px-3 py-1">
-                  Todos Verificados
-                </Badge>
-              </div>
-
-              {/* CORREÇÃO: Mostrar aviso se alguns usuários falharam ao carregar */}
-              {errUsers && (
-                <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <AlertCircle className="w-5 h-5 text-yellow-600" />
-                    <p className="text-sm text-yellow-800">
-                      Alguns perfis não puderam ser carregados. Mostrando {list.length} de {providers.length} prestadores disponíveis.
-                    </p>
+          {/* Lista de Prestadores */}
+          <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-slate-800">
+                <Shield className="h-5 w-5 text-orange-500" />
+                Prestadores Verificados
+              </CardTitle>
+              <CardDescription>
+                Conecte-se com profissionais qualificados para seus projetos
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {/* NOVA LÓGICA: Mostrar mensagem quando só há o usuário logado */}
+              {showOnlyCurrentUser ? (
+                <div className="text-center py-12 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
+                  <UserCheck className="h-16 w-16 text-blue-500 mx-auto mb-4" />
+                  <h3 className="text-xl font-semibold text-blue-700 mb-2">
+                    Você é o único prestador cadastrado!
+                  </h3>
+                  <p className="text-blue-600 mb-6 max-w-md mx-auto">
+                    Parabéns por fazer parte da nossa plataforma! Enquanto aguardamos mais prestadores se cadastrarem, 
+                    que tal completar seu perfil para atrair mais clientes?
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                    <Button 
+                      onClick={() => setLocation("/profile")}
+                      className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold px-6 py-2 rounded-xl shadow-lg transition-all duration-300 hover:scale-105"
+                    >
+                      <Settings className="h-4 w-4 mr-2" />
+                      Editar Meu Perfil
+                    </Button>
+                    <Button 
+                      onClick={() => setLocation("/home")}
+                      variant="outline"
+                      className="border-blue-300 text-blue-600 hover:bg-blue-50 font-semibold px-6 py-2 rounded-xl transition-all duration-300 hover:scale-105"
+                    >
+                      <Home className="h-4 w-4 mr-2" />
+                      Voltar ao Início
+                    </Button>
                   </div>
                 </div>
-              )}
-
-              {/* GRID DE CARDS - AGORA INCLUINDO TODOS OS PRESTADORES */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {list.map(({ provider, user }) => {
-                  const isOwnProfile = isCurrentUser(user.id);
-                  
-                  return (
+              ) : list.length === 0 ? (
+                <div className="text-center py-12">
+                  <AlertCircle className="h-16 w-16 text-slate-400 mx-auto mb-4" />
+                  <h3 className="text-xl font-semibold text-slate-600 mb-2">
+                    Nenhum prestador encontrado
+                  </h3>
+                  <p className="text-slate-500">
+                    Tente ajustar os filtros de busca para encontrar mais prestadores.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {list.map(({ provider, user }) => (
                     <motion.div
                       key={provider.provider_id}
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="group"
+                      transition={{ duration: 0.5 }}
                     >
-                      {/* Card com Destaque para Usuário Logado */}
-                      <Card className={`relative overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 border-0 rounded-2xl group-hover:scale-[1.02] ${
-                        isOwnProfile 
-                          ? 'bg-gradient-to-br from-blue-50 to-indigo-100 ring-2 ring-blue-300 ring-opacity-50' 
-                          : 'bg-white'
-                      }`}>
-                        
-                        {/* Badge "Seu Perfil" para o usuário logado */}
-                        {isOwnProfile && (
-                          <div className="absolute top-2 right-2 z-10">
-                            <Badge className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-2 py-1 rounded-full text-xs font-bold shadow-lg">
-                              <Crown className="w-3 h-3 mr-1" />
-                              Seu Perfil
-                            </Badge>
-                          </div>
-                        )}
-                        
-                        {/* Banner Superior Compacto */}
-                        <div className={`h-16 relative overflow-hidden ${
-                          isOwnProfile 
-                            ? 'bg-gradient-to-br from-blue-500 via-indigo-600 to-purple-600' 
-                            : 'bg-gradient-to-br from-orange-400 via-amber-500 to-yellow-500'
-                        }`}>
-                          {/* Padrão decorativo sutil */}
-                          <div className="absolute inset-0 opacity-20">
-                            <div className="absolute top-0 right-0 w-16 h-16 bg-white rounded-full -translate-y-8 translate-x-8"></div>
-                            {isOwnProfile && (
-                              <Sparkles className="absolute top-2 left-2 w-4 h-4 text-white/60 animate-pulse" />
-                            )}
-                          </div>
-                        </div>
-                        
-                        {/* Avatar Posicionado */}
-                        <div className="absolute top-6 left-1/2 transform -translate-x-1/2">
-                          <Avatar className={`w-14 h-14 ring-3 shadow-lg border-2 border-white/50 ${
-                            isOwnProfile ? 'ring-blue-300' : 'ring-white'
-                          }`}>
-                            <AvatarFallback className={`text-base font-bold text-white ${
-                              isOwnProfile 
-                                ? 'bg-gradient-to-br from-blue-600 to-indigo-800' 
-                                : 'bg-gradient-to-br from-slate-600 to-slate-800'
-                            }`}>
-                              {user.name[0].toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
-                          {/* Badge de verificação */}
-                          <div className={`absolute -bottom-1 -right-1 rounded-full p-1 shadow-lg ${
-                            isOwnProfile 
-                              ? 'bg-gradient-to-r from-blue-400 to-indigo-500' 
-                              : 'bg-gradient-to-r from-green-400 to-emerald-500'
-                          }`}>
-                            <CheckCircle className="w-3 h-3 text-white" />
-                          </div>
-                        </div>
-
-                        {/* Conteúdo Principal Compacto */}
-                        <CardContent className="pt-9 pb-4 px-4 text-center">
-                          {/* Nome e Profissão */}
-                          <div className="mb-2">
-                            <CardTitle className={`text-base font-bold mb-1 tracking-tight line-clamp-1 ${
-                              isOwnProfile ? 'text-blue-900' : 'text-slate-800'
-                            }`}>
-                              {user.name}
-                            </CardTitle>
-                            
-                            <Badge className={`mb-2 px-2 py-1 rounded-full font-medium border text-xs ${
-                              isOwnProfile 
-                                ? 'bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-800 border-blue-200/50' 
-                                : 'bg-gradient-to-r from-orange-100 to-amber-100 text-orange-800 border-orange-200/50'
-                            }`}>
-                              {provider.profession}
-                            </Badge>
-                          </div>
-
-                          {/* Avaliação Limpa */}
-                          <div className="flex items-center justify-center gap-2 mb-2">
-                            <Star className={`w-4 h-4 fill-current ${
-                              isOwnProfile ? 'text-blue-500' : 'text-amber-500'
-                            }`} />
-                            <span className={`text-sm font-semibold ${
-                              isOwnProfile ? 'text-blue-800' : 'text-gray-800'
-                            }`}>
-                              {provider.rating_mid}
-                            </span>
-                            <span className={`text-xs ml-1 ${
-                              isOwnProfile ? 'text-blue-400' : 'text-gray-400'
-                            }`}>
-                              • {provider.views_profile} views
-                            </span>
-                          </div>
-
-                          {/* Descrição Compacta */}
-                          <div className="mb-3 h-8 flex items-center justify-center">
-                            <CardDescription className={`text-xs leading-tight line-clamp-2 text-center ${
-                              isOwnProfile ? 'text-blue-700' : 'text-slate-600'
-                            }`}>
-                              {provider.about ?? "Profissional especializado em projetos arquitetônicos únicos e personalizados."}
-                            </CardDescription>
-                          </div>
-
-                          {/* Informação de Localização Compacta */}
-                          <div className="mb-3">
-                            <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full border ${
-                              isOwnProfile 
-                                ? 'bg-blue-50 border-blue-100' 
-                                : 'bg-blue-50 border-blue-100'
-                            }`}>
-                              <MapPin className={`w-3 h-3 ${
-                                isOwnProfile ? 'text-blue-600' : 'text-blue-600'
-                              }`} />
-                              <span className={`text-xs font-medium ${
-                                isOwnProfile ? 'text-blue-800' : 'text-blue-800'
-                              }`}>
-                                Cidade {user.cidade_id}
-                              </span>
+                      <Card className="h-full border border-slate-200 hover:shadow-xl transition-all duration-300 hover:scale-105 bg-white">
+                        <CardContent className="p-6">
+                          <div className="flex items-center gap-4 mb-4">
+                            <Avatar className="h-16 w-16 border-2 border-orange-200">
+                              <AvatarFallback className="bg-gradient-to-br from-orange-400 to-amber-500 text-white font-bold text-lg">
+                                {user.name
+                                  .split(" ")
+                                  .map((n) => n[0])
+                                  .join("")
+                                  .slice(0, 2)
+                                  .toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1">
+                              <h3 className="font-bold text-lg text-slate-800 mb-1">
+                                {user.name}
+                              </h3>
+                              <p className="text-orange-600 font-medium mb-2">
+                                {provider.profession}
+                              </p>
+                              <div className="flex items-center gap-4 text-sm text-slate-600">
+                                <div className="flex items-center gap-1">
+                                  <Star className="h-4 w-4 text-yellow-500 fill-current" />
+                                  <span className="font-medium">
+                                    {provider.rating_mid || "4.5"}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <span>{provider.views_profile} visualizações</span>
+                                </div>
+                              </div>
                             </div>
                           </div>
 
-                          {/* Botões de Ação Compactos */}
+                          {provider.about && (
+                            <p className="text-slate-600 text-sm mb-4 line-clamp-3">
+                              {provider.about}
+                            </p>
+                          )}
+
+                          <div className="flex items-center gap-2 mb-4">
+                            <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Verificado
+                            </Badge>
+                            <Badge variant="outline" className="border-orange-200 text-orange-700">
+                              <Award className="h-3 w-3 mr-1" />
+                              Pro
+                            </Badge>
+                          </div>
+
                           <div className="flex gap-2">
                             <Link href={`/providers/${provider.provider_id}`} className="flex-1">
-                              <Button className={`w-full font-semibold py-1.5 rounded-xl transition-all duration-300 shadow-md hover:shadow-lg text-xs ${
-                                isOwnProfile 
-                                  ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white' 
-                                  : 'bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white'
-                              }`}>
-                                <User className="w-3 h-3 mr-1" />
-                                {isOwnProfile ? 'Meu Perfil' : 'Ver Perfil'}
-                              </Button>
-                            </Link>
-                            {!isOwnProfile && (
                               <Button 
                                 variant="outline" 
-                                size="icon"
-                                className="border-2 border-orange-200 text-orange-600 hover:bg-orange-50 hover:border-orange-300 rounded-xl p-1.5 transition-all duration-300"
+                                className="w-full border-slate-200 hover:bg-slate-50 text-slate-700"
                               >
-                                <MessageCircle className="w-3 h-3" />
+                                <User className="h-4 w-4 mr-2" />
+                                Ver Perfil
                               </Button>
-                            )}
+                            </Link>
+                            <Button 
+                              onClick={() => handleStartConversation(user.id)}
+                              className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold shadow-lg"
+                            >
+                              <MessageCircle className="h-4 w-4 mr-2" />
+                              Contatar
+                            </Button>
                           </div>
                         </CardContent>
                       </Card>
                     </motion.div>
-                  );
-                })}
-              </div>
-
-              {/* Mensagem quando não há resultados */}
-              {list.length === 0 && !loadingProv && !loadingUsers && (
-                <div className="text-center py-12">
-                  <Users className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-slate-600 mb-2">
-                    Nenhum arquiteto encontrado
-                  </h3>
-                  <p className="text-slate-500 mb-4">
-                    Tente ajustar os filtros de busca para encontrar mais profissionais.
-                  </p>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setSearch("");
-                      setLocationFilter("");
-                      setServiceFilter("");
-                    }}
-                    className="text-amber-600 border-amber-200 hover:bg-amber-50"
-                  >
-                    Limpar Filtros
-                  </Button>
+                  ))}
                 </div>
               )}
-            </section>
-
-            {/* Sidebar */}
-            <aside className="space-y-6">
-              {/* Serviços Freelancer Mais Recentes - COM BOTÃO VER PERFIL */}
-              <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.6, delay: 0.6 }}
-              >
-                <Card className="bg-amber-50 border-amber-200 shadow-lg">
-                  <CardHeader className="pb-4">
-                    <div className="flex items-center gap-2">
-                      <TrendingUp className="w-5 h-5 text-amber-600" />
-                      <CardTitle className="text-amber-800">
-                        Serviços Mais Recentes
-                      </CardTitle>
-                    </div>
-                    <CardDescription className="text-amber-600">
-                      Últimos serviços lançados na plataforma
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {loadingServices ? (
-                      <div className="flex items-center justify-center py-4">
-                        <Loader2 className="animate-spin h-6 w-6 text-amber-600" />
-                      </div>
-                    ) : errServices ? (
-                      <p className="text-sm text-red-600 text-center py-4">
-                        Erro ao carregar serviços
-                      </p>
-                    ) : recentServices.length > 0 ? (
-                      recentServices.map((service) => (
-                        <div key={service.id_serviceFreelancer} className="border-b border-amber-200 pb-3 last:border-b-0">
-                          <h4 className="font-semibold text-sm text-gray-900 mb-1 line-clamp-1">
-                            {service.title}
-                          </h4>
-                          <p className="text-xs text-gray-600 mb-2 line-clamp-2">
-                            {service.description}
-                          </p>
-                          <div className="flex items-center justify-between text-xs mb-2">
-                            <span className="text-amber-600 font-semibold">
-                              {formatPrice(service.price)}
-                            </span>
-                            <div className="flex items-center gap-1 text-gray-500">
-                              <Calendar className="w-3 h-3" />
-                              {formatDate(service.createdAt)}
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <Badge className="bg-amber-100 text-amber-800 text-xs">
-                              {getServiceCategory(service.title, service.description)}
-                            </Badge>
-                            {/* BOTÃO VER PERFIL ADICIONADO */}
-                            <Link href={`/providers/${service.ServiceProvider.provider_id}`}>
-                              <Button 
-                                size="sm" 
-                                variant="outline"
-                                className="text-xs px-2 py-1 h-6 border-amber-300 text-amber-700 hover:bg-amber-100"
-                              >
-                                <User className="w-3 h-3 mr-1" />
-                                Ver Perfil
-                              </Button>
-                            </Link>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-sm text-gray-600 text-center py-4">
-                        Nenhum serviço encontrado
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              </motion.div>
-
-              {/* Premium Features */}
-              <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.6, delay: 0.8 }}
-              >
-                <Card className="bg-amber-50 border-amber-200 shadow-lg">
-                  <CardHeader className="pb-4">
-                    <div className="flex items-center gap-2">
-                      <Zap className="w-5 h-5 text-amber-600" />
-                      <CardTitle className="text-amber-800">
-                        Recursos Premium
-                      </CardTitle>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {[
-                      "Contratação Expressa",
-                      "Garantia de Qualidade",
-                      "Suporte 24/7",
-                    ].map((txt, i) => (
-                      <div key={i} className="flex items-start gap-3">
-                        <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
-                        <p className="text-sm text-gray-900">{txt}</p>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              </motion.div>
-
-              {/* CTA Support */}
-              <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.6, delay: 1.2 }}
-              >
-                <Card className="bg-gradient-to-br from-amber-600 to-amber-700 text-white shadow-xl border-0">
-                  <CardContent className="p-6 text-center">
-                    <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <MessageCircle className="w-6 h-6 text-white" />
-                    </div>
-                    <CardTitle className="text-white mb-3 text-lg">
-                      Precisa de Ajuda?
-                    </CardTitle>
-                    <CardDescription className="text-amber-100 text-sm mb-4">
-                      Nossa equipe está pronta para ajudar você a encontrar o
-                      arquiteto perfeito.
-                    </CardDescription>
-                    <Button className="w-full bg-white text-amber-600 hover:bg-amber-50 font-semibold py-2.5 rounded-xl">
-                      Falar com Especialista
-                    </Button>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            </aside>
-          </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </ApplicationLayout>

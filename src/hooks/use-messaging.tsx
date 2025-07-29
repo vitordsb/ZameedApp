@@ -1,31 +1,50 @@
-import { useState, useEffect, useCallback } from 'react';
+
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiRequest } from '@/lib/queryClient';
 
 export interface Conversation {
-  partner: {
+  id: number;
+  user1_id: number;
+  user2_id: number;
+  created_at: string;
+  updated_at: string;
+  // Dados do outro usuário na conversa
+  otherUser: {
     id: number;
     name: string;
-    profileImage: string | null;
-    userType: string;
+    email: string;
+    type: "prestador" | "contratante";
   };
-  lastMessage: {
+  // Última mensagem da conversa
+  lastMessage?: {
     id: number;
     content: string;
-    createdAt: Date;
-    isFromUser: boolean;
+    created_at: string;
+    sender_id: number;
   };
   unreadCount: number;
 }
 
 export interface Message {
   id: number;
-  senderId: number;
-  receiverId: number;
+  conversation_id: number;
+  sender_id: number;
   content: string;
-  createdAt: Date | string;
-  read: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateConversationRequest {
+  user1_id: number;
+  user2_id: number;
+}
+
+export interface CreateMessageRequest {
+  conversation_id: number;
+  content: string;
 }
 
 export function useMessaging(initialPartnerId?: string | null) {
@@ -33,271 +52,494 @@ export function useMessaging(initialPartnerId?: string | null) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
-  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [loadingConversations, setLoadingConversations] = useState(true);
-  const [loadingMessages, setLoadingMessages] = useState(false);
-  const [loadingInitialPartner, setLoadingInitialPartner] = useState(!!initialPartnerId);
-  const [sendingMessage, setSendingMessage] = useState(false);
-  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
-  
-  // Fetch conversations
-  const fetchConversations = useCallback(async () => {
-    if (!isLoggedIn || !user) return;
-    
-    try {
-      // Pass the initialPartnerId as a query parameter if it exists
-      const apiUrl = initialPartnerId 
-        ? `/api/messages?initialUserId=${initialPartnerId}` 
-        : '/api/messages';
-        
-      const response = await fetch(apiUrl);
-      if (response.ok) {
-        const data = await response.json();
-        setConversations(data);
-        
-        // If there's an initial partner ID, find the matching conversation and select it
-        if (initialPartnerId) {
-          const initialConversation = data.find(
-            (conv: Conversation) => conv.partner.id === parseInt(initialPartnerId)
-          );
+
+  // Buscar todas as conversas do usuário
+  const { 
+    data: conversationsData, 
+    isLoading: loadingConversations, 
+    error: conversationsError,
+    refetch: refetchConversations 
+  } = useQuery({
+    queryKey: ['conversations'],
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/conversation');
+      if (!response.ok) {
+        throw new Error('Erro ao buscar conversas');
+      }
+      const data = await response.json();
+      console.log('=== DADOS BRUTOS DA API ===');
+      console.log('Resposta completa da API:', data);
+      console.log('Conversas recebidas:', data.conversations);
+      
+      if (data.conversations) {
+        data.conversations.forEach((conv: any, index: number) => {
+          console.log(`Conversa ${index}:`, conv);
+          console.log(`  - conversation_id: ${conv.conversation_id} (tipo: ${typeof conv.conversation_id})`);
+          console.log(`  - user1_id: ${conv.user1_id}`);
+          console.log(`  - user2_id: ${conv.user2_id}`);
           
-          if (initialConversation) {
-            setCurrentConversation(initialConversation);
-            fetchMessages(initialConversation.partner.id);
+          if (!conv.conversation_id || typeof conv.conversation_id !== 'number') {
+            console.error(`ERRO CRÍTICO: Conversa ${index} sem conversation_id válido!`, conv);
           }
-          setLoadingInitialPartner(false);
+        });
+      }
+      
+      return data;
+    },
+    enabled: isLoggedIn && !!user,
+    staleTime: 30000, // 30 segundos
+    refetchInterval: 60000, // Refetch a cada 1 minuto
+  });
+
+  // Buscar dados de usuários para as conversas
+  const userIds = useMemo(() => {
+    if (!conversationsData?.conversations || !user) return [];
+    
+    const ids = conversationsData.conversations.map((conv: any) => {
+      return conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
+    });
+    
+    console.log('IDs de usuários para buscar:', ids);
+    return ids;
+  }, [conversationsData, user]);
+
+  // Query para buscar dados dos usuários
+  const { data: usersData, isLoading: loadingUsers } = useQuery({
+    queryKey: ['users', userIds],
+    queryFn: async () => {
+      if (userIds.length === 0) return {};
+      
+      console.log('Buscando dados dos usuários:', userIds);
+      
+      const userPromises = userIds.map(async (userId: number) => {
+        try {
+          const response = await apiRequest('GET', `/users/${userId}`);
+          if (!response.ok) {
+            console.error(`Erro ao buscar usuário ${userId}: Status ${response.status}`);
+            return { id: userId, data: null };
+          }
+          const data = await response.json();
+          console.log(`Dados do usuário ${userId}:`, data);
+          return { id: userId, data: data.user };
+        } catch (error) {
+          console.error(`Erro ao buscar usuário ${userId}:`, error);
+          return { id: userId, data: null };
+        }
+      });
+
+      const results = await Promise.all(userPromises);
+      const usersMap: Record<number, any> = {};
+      
+      results.forEach(({ id, data }) => {
+        usersMap[id] = data || {
+          id,
+          name: 'Usuário',
+          email: '',
+          type: 'contratante'
+        };
+      });
+
+      console.log('Mapa de usuários processado:', usersMap);
+      return usersMap;
+    },
+    enabled: userIds.length > 0,
+    staleTime: 5 * 60 * 1000, // 5 minutos
+  });
+
+  // Processar conversas com dados dos usuários
+  const processedConversations: Conversation[] = useMemo(() => {
+    if (!conversationsData?.conversations || !user || !usersData) {
+      console.log('Dados insuficientes para processar conversas:', {
+        hasConversations: !!conversationsData?.conversations,
+        hasUser: !!user,
+        hasUsersData: !!usersData
+      });
+      return [];
+    }
+
+    console.log('=== PROCESSANDO CONVERSAS ===');
+    console.log('Conversas brutas da API:', conversationsData.conversations);
+
+    const tempProcessed = conversationsData.conversations
+      .map((conv: any) => {
+        console.log(`=== PROCESSANDO CONVERSA ${conv.conversation_id} ===`);
+        console.log('Conversa bruta:', conv);
+        
+        const otherUserId = conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
+        const otherUser = usersData[otherUserId];
+
+        const processedConv: Conversation = {
+          id: conv.conversation_id, 
+          user1_id: conv.user1_id,
+          user2_id: conv.user2_id,
+          created_at: conv.createdAt, 
+          updated_at: conv.updatedAt, 
+          otherUser: otherUser || {
+            id: otherUserId,
+            name: 'Usuário',
+            email: '',
+            type: 'contratante' as const
+          },
+          unreadCount: 0 
+        };
+
+        console.log(`Conversa ${conv.conversation_id} processada:`, processedConv);
+        console.log(`  - ID mapeado: ${processedConv.id} (tipo: ${typeof processedConv.id})`);
+        console.log(`  - otherUser: ${processedConv.otherUser.name} (ID: ${processedConv.otherUser.id})`);
+        
+        if (!processedConv.id || typeof processedConv.id !== 'number') {
+          console.error('ERRO CRÍTICO: Conversa processada sem ID válido!', processedConv);
+          return null; // Retorna null para conversas inválidas
         }
         
-        // Calculate total unread messages
-        const totalUnread = data.reduce((sum: number, conv: Conversation) => sum + conv.unreadCount, 0);
-        setUnreadMessageCount(totalUnread);
-        
-        setLoadingConversations(false);
-      } else {
-        toast({
-          title: 'Erro ao carregar conversas',
-          description: 'Could not load your conversations. Please try again.',
-          variant: 'destructive',
-        });
-        setLoadingConversations(false);
-        setLoadingInitialPartner(false);
+        return processedConv;
+      })
+      .filter((conv: Conversation | null) => conv !== null) as Conversation[]; // Filtra os nulls
+
+    console.log('=== CONVERSAS FINAIS PROCESSADAS ===');
+    console.log('Total de conversas:', tempProcessed.length);
+    tempProcessed.forEach((conv, index) => {
+      console.log(`Conversa ${index}: ID=${conv.id}, otherUser=${conv.otherUser.name}`);
+    });
+    
+    return tempProcessed;
+  }, [conversationsData, user, usersData]);
+
+  // Mutation para criar nova conversa
+  const createConversationMutation = useMutation({
+    mutationFn: async (data: CreateConversationRequest) => {
+      console.log('Criando conversa com dados:', data);
+      const response = await apiRequest('POST', '/conversation', data);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Erro ao criar conversa:', errorText);
+        throw new Error(`Erro ao criar conversa: ${response.status}`);
       }
-    } catch (error) {
-      console.error('Error fetching conversations:', error);
+      const result = await response.json();
+      console.log('Resposta da criação de conversa:', result);
+      return result;
+    },
+    onSuccess: async (data, variables) => {
+      console.log('Conversa criada com sucesso:', data);
+      
+      // Invalidar queries para atualizar a lista
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      
+      await refetchConversations(); // Garante que a lista esteja atualizada
+      
       toast({
-        title: 'Network error',
-        description: 'Could not connect to the server. Please check your connection.',
+        title: 'Conversa criada',
+        description: 'Nova conversa iniciada com sucesso.',
+      });
+    },
+    onError: (error) => {
+      console.error('Erro ao criar conversa:', error);
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível criar a conversa. Tente novamente.',
         variant: 'destructive',
       });
-      setLoadingConversations(false);
-      setLoadingInitialPartner(false);
-    }
-  }, [isLoggedIn, user, toast, initialPartnerId]);
+    },
+  });
 
-  // Fetch messages for a conversation
-  const fetchMessages = useCallback(async (partnerId: number) => {
-    if (!isLoggedIn || !user) return;
-    
-    setLoadingMessages(true);
-    try {
-      const response = await fetch(`/api/messages/${partnerId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setMessages(data);
-        
-        // After fetching messages, refresh conversations to update unread counts
-        fetchConversations();
-      } else {
-        toast({
-          title: 'Error fetching messages',
-          description: 'Could not load your messages. Please try again.',
-          variant: 'destructive',
-        });
+  // Mutation para enviar mensagem
+  const sendMessageMutation = useMutation({
+    mutationFn: async (data: CreateMessageRequest) => {
+      console.log('Enviando mensagem com dados:', data);
+      
+      // Validação dos dados antes de enviar
+      if (!data.conversation_id || !data.content?.trim()) {
+        throw new Error('Dados inválidos para envio de mensagem');
       }
-    } catch (error) {
-      console.error('Error fetching messages:', error);
-      toast({
-        title: 'Network error',
-        description: 'Could not connect to the server. Please check your connection.',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoadingMessages(false);
-    }
-  }, [isLoggedIn, user, toast, fetchConversations]);
-
-  // Send a message
-  const sendMessage = useCallback(async () => {
-    if (!currentConversation || !newMessage.trim() || !isLoggedIn || !user) return;
-    
-    setSendingMessage(true);
-    try {
-      const response = await fetch(`/api/messages/${currentConversation.partner.id}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ content: newMessage }),
+      
+      const response = await apiRequest('POST', '/message', {
+        conversation_id: data.conversation_id,
+        content: data.content.trim()
       });
       
-      if (response.ok) {
-        const sentMessage = await response.json();
-        setMessages(prev => [...prev, sentMessage]);
-        setNewMessage('');
-        
-        // Update the conversation list
-        queryClient.invalidateQueries({ queryKey: ['/api/messages'] });
-        
-        // Update current conversation's last message
-        setConversations(prev => 
-          prev.map(conv => 
-            conv.partner.id === currentConversation.partner.id
-              ? {
-                  ...conv,
-                  lastMessage: {
-                    id: sentMessage.id,
-                    content: sentMessage.content,
-                    createdAt: sentMessage.createdAt,
-                    isFromUser: true,
-                  },
-                }
-              : conv
-          )
-        );
-        
-        // Refresh conversations to get updated unread counts
-        setTimeout(() => {
-          fetchConversations();
-        }, 500);
-      } else {
-        toast({
-          title: 'Error sending message',
-          description: 'Could not send your message. Please try again.',
-          variant: 'destructive',
-        });
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Erro ao enviar mensagem:', errorText);
+        throw new Error(`Erro ao enviar mensagem: ${response.status}`);
       }
-    } catch (error) {
-      console.error('Error sending message:', error);
+      
+      const result = await response.json();
+      console.log('Mensagem enviada com sucesso:', result);
+      return result;
+    },
+    onSuccess: (data) => {
+      console.log('Mensagem enviada com sucesso:', data);
+      queryClient.invalidateQueries({ queryKey: ['messages', currentConversation?.id] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      setNewMessage('');
       toast({
-        title: 'Network error',
-        description: 'Could not connect to the server. Please check your connection.',
+        title: 'Mensagem enviada',
+        description: 'Sua mensagem foi enviada com sucesso.',
+      });
+    },
+    onError: (error) => {
+      console.error('Erro ao enviar mensagem:', error);
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível enviar a mensagem. Tente novamente.',
         variant: 'destructive',
       });
-    } finally {
-      setSendingMessage(false);
+    },
+  });
+
+  // CORREÇÃO: Definir startConversation antes do useEffect
+  const startConversation = useCallback(async (targetUserId: number) => {
+    if (!user || !isLoggedIn) {
+      toast({
+        title: 'Login necessário',
+        description: 'Você precisa estar logado para iniciar uma conversa.',
+        variant: 'destructive',
+      });
+      return false;
     }
-  }, [currentConversation, newMessage, isLoggedIn, user, toast, queryClient, fetchConversations]);
 
-  // Select a conversation
-  const selectConversation = useCallback((conversation: Conversation) => {
-    setCurrentConversation(conversation);
-    fetchMessages(conversation.partner.id);
-  }, [fetchMessages]);
-
-  // Fetch unread message count
-  const fetchUnreadCount = useCallback(async () => {
-    if (!isLoggedIn || !user) return;
-    
     try {
-      const response = await fetch('/api/messages/unread/count');
-      if (response.ok) {
-        const data = await response.json();
-        setUnreadMessageCount(data.count);
-      }
-    } catch (error) {
-      console.error('Failed to fetch unread messages:', error);
-    }
-  }, [isLoggedIn, user]);
-
-  // Start a new conversation with a user
-  const startConversation = useCallback(async (partnerId: number) => {
-    if (!isLoggedIn || !user) return;
-    
-    try {
-      // First check if the conversation already exists
-      const existingConversation = conversations.find(
-        conv => conv.partner.id === partnerId
+      console.log('Iniciando conversa com usuário:', targetUserId);
+      console.log('Conversas disponíveis:', processedConversations);
+      
+      // Verificar se já existe uma conversa com este usuário
+      const existingConversation = processedConversations.find(conv => 
+        conv.otherUser.id === targetUserId
       );
-      
+
       if (existingConversation) {
+        console.log('Conversa existente encontrada:', existingConversation);
+        console.log('ID da conversa existente:', existingConversation.id);
+        
+        if (!existingConversation.id || typeof existingConversation.id !== 'number') {
+          console.error('ERRO: Conversa existente sem ID válido!', existingConversation);
+          toast({
+            title: 'Erro',
+            description: 'Conversa inválida encontrada. Tente novamente.',
+            variant: 'destructive',
+          });
+          return false;
+        }
+        
         setCurrentConversation(existingConversation);
-        fetchMessages(partnerId);
         return true;
       }
-      
-      // If not, fetch user info and create a new conversation
-      const response = await fetch(`/api/messages?initialUserId=${partnerId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setConversations(data);
-        
-        const newConversation = data.find(
-          (conv: Conversation) => conv.partner.id === partnerId
+
+      // Criar nova conversa
+      console.log('Criando nova conversa com usuário:', targetUserId);
+      await createConversationMutation.mutateAsync({
+        user1_id: user.id,
+        user2_id: targetUserId,
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Erro ao iniciar conversa:', error);
+      return false;
+    }
+  }, [user, isLoggedIn, processedConversations, createConversationMutation, toast]);
+
+  // Função para iniciar uma nova conversa e navegar
+  const startConversationAndNavigate = useCallback(async (targetUserId: number, setLocation: (path: string) => void) => {
+    const success = await startConversation(targetUserId);
+    if (success) {
+      setLocation(`/messages?userId=${targetUserId}`);
+    }
+    return success;
+  }, [startConversation]);
+
+  // CORREÇÃO: useEffect agora pode usar startConversation sem erro
+  useEffect(() => {
+    console.log('=== ESTADO ATUAL DO HOOK ===');
+    console.log('currentConversation:', currentConversation);
+    console.log('currentConversation?.id:', currentConversation?.id);
+    console.log('conversations.length:', processedConversations.length);
+    console.log('loadingConversations:', loadingConversations);
+    console.log('loadingUsers:', loadingUsers);
+
+    if (!loadingConversations && !loadingUsers && processedConversations.length > 0 && !currentConversation) {
+      console.log('Tentando selecionar a conversa mais recente ou a inicial...');
+      if (initialPartnerId) {
+        const conversationFromUrl = processedConversations.find(conv => 
+          conv.otherUser.id === parseInt(initialPartnerId)
         );
-        
-        if (newConversation) {
-          setCurrentConversation(newConversation);
-          fetchMessages(partnerId);
-          return true;
+        if (conversationFromUrl) {
+          console.log('Selecionando conversa da URL:', conversationFromUrl);
+          setCurrentConversation(conversationFromUrl);
+        } else {
+          console.log('Nenhuma conversa encontrada para o initialPartnerId. Tentando criar...');
+          startConversation(parseInt(initialPartnerId));
+        }
+      } else {
+        // Seleciona a conversa mais recente se não houver initialPartnerId
+        const mostRecentConversation = processedConversations.sort((a, b) => 
+          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+        )[0];
+        if (mostRecentConversation) {
+          console.log('Selecionando a conversa mais recente:', mostRecentConversation);
+          setCurrentConversation(mostRecentConversation);
         }
       }
-      return false;
-    } catch (error) {
-      console.error('Error starting conversation:', error);
+    }
+
+    // Se a lista de conversas mudar e a conversa atual não estiver mais nela, resetar
+    if (currentConversation && !processedConversations.some(conv => conv.id === currentConversation.id)) {
+      console.log('Conversa atual não encontrada na lista processada. Resetando currentConversation.');
+      setCurrentConversation(null);
+    }
+
+  }, [initialPartnerId, processedConversations, loadingConversations, loadingUsers, currentConversation, startConversation]);
+
+  // Efeito adicional para definir currentConversation após criação de conversa
+  useEffect(() => {
+    if (!loadingConversations && !loadingUsers && processedConversations.length > 0 && !currentConversation && initialPartnerId) {
+      // Aguardar um pouco após o refetch para encontrar a conversa criada
+      const timer = setTimeout(() => {
+        const newConversation = processedConversations.find((conv) => 
+          conv.otherUser.id === parseInt(initialPartnerId)
+        );
+
+        if (newConversation) {
+          console.log('Conversa encontrada após criação:', newConversation);
+          setCurrentConversation(newConversation);
+        }
+      }, 1000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [processedConversations, loadingConversations, loadingUsers, currentConversation, initialPartnerId]);
+
+  // Buscar mensagens de uma conversa específica
+  const { 
+    data: messages = [], 
+    isLoading: loadingMessages,
+    error: messagesError,
+    refetch: refetchMessages 
+  } = useQuery<Message[]>({
+    queryKey: ['messages', currentConversation?.id],
+    queryFn: async () => {
+      if (!currentConversation?.id) {
+        console.warn('Tentativa de buscar mensagens sem ID de conversa válido:', currentConversation);
+        return [];
+      }
+      
+      console.log(`Buscando mensagens para conversa ${currentConversation.id}`);
+      const response = await apiRequest('GET', `/message/conversation/${currentConversation.id}`);
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar mensagens: ${response.status}`);
+      }
+      const data = await response.json();
+      console.log(`Mensagens recebidas para conversa ${currentConversation.id}:`, data);
+      return data.messages || [];
+    },
+    enabled: !!currentConversation?.id && isLoggedIn && typeof currentConversation.id === 'number',
+    staleTime: 10000, // 10 segundos
+    refetchInterval: 15000, // Refetch a cada 15 segundos
+  });
+
+  // Função para selecionar uma conversa da lista
+  const selectConversation = useCallback((conversation: Conversation) => {
+    console.log('=== SELECIONANDO CONVERSA ===');
+    console.log('Conversa a ser selecionada:', conversation);
+    if (!conversation || !conversation.id || typeof conversation.id !== 'number') {
+      console.error('ERRO: Tentativa de selecionar conversa sem ID válido!', conversation);
       toast({
-        title: 'Error',
-        description: 'Could not start a new conversation. Please try again.',
+        title: 'Erro',
+        description: 'Não foi possível selecionar a conversa. ID inválido.',
         variant: 'destructive',
       });
-      return false;
+      return;
     }
-  }, [isLoggedIn, user, conversations, toast, fetchMessages]);
+    setCurrentConversation(conversation);
+    console.log('currentConversation definido como:', conversation);
+  }, [setCurrentConversation, toast]);
 
-  // Initial data fetch
-  useEffect(() => {
-    if (isLoggedIn && user) {
-      fetchConversations();
-      
-      // Poll for new messages every 15 seconds
-      const interval = setInterval(() => {
-        fetchUnreadCount();
-        
-        // If a conversation is selected, also update its messages
-        if (currentConversation) {
-          fetchMessages(currentConversation.partner.id);
-        }
-      }, 15000);
-      
-      return () => clearInterval(interval);
-    }
-  }, [isLoggedIn, user, fetchConversations, fetchUnreadCount, currentConversation, fetchMessages]);
+  // Função para enviar mensagem
+  const sendMessage = useCallback(async () => {
+    console.log('=== TENTANDO ENVIAR MENSAGEM ===');
+    console.log('currentConversation completo:', currentConversation);
+    console.log('currentConversation.id:', currentConversation?.id);
+    console.log('Tipo de currentConversation.id:', typeof currentConversation?.id);
+    console.log('newMessage:', newMessage);
+    console.log('user:', user);
 
-  // Debug: Log when initialPartnerId changes
-  useEffect(() => {
-    if (initialPartnerId) {
-      console.log(`Messaging hook received initialPartnerId: ${initialPartnerId}`);
+    if (!currentConversation) {
+      console.error('ERRO: currentConversation é null/undefined');
+      toast({
+        title: 'Erro',
+        description: 'Nenhuma conversa selecionada. Selecione uma conversa primeiro.',
+        variant: 'destructive',
+      });
+      return;
     }
-  }, [initialPartnerId]);
+
+    if (!currentConversation.id || typeof currentConversation.id !== 'number') {
+      console.error('ERRO: currentConversation.id é undefined/null ou não é um número');
+      console.error('Objeto currentConversation:', JSON.stringify(currentConversation, null, 2));
+      toast({
+        title: 'Erro',
+        description: 'ID da conversa não encontrado ou inválido. Tente selecionar a conversa novamente.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!newMessage.trim()) {
+      console.warn('AVISO: Mensagem vazia. Não será enviada.');
+      toast({
+        title: 'Aviso',
+        description: 'A mensagem não pode ser vazia.',
+        variant: 'warning',
+      });
+      return;
+    }
+
+    if (!user?.id) {
+      console.error('ERRO: ID do usuário logado não encontrado.');
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível identificar o remetente da mensagem.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    await sendMessageMutation.mutateAsync({
+      conversation_id: currentConversation.id,
+      content: newMessage,
+    });
+  }, [currentConversation, newMessage, user, sendMessageMutation, toast]);
 
   return {
-    conversations,
+    conversations: processedConversations,
     currentConversation,
     messages,
     newMessage,
+    unreadMessageCount: 0, // TODO: Implementar contagem de mensagens não lidas
     loadingConversations,
     loadingMessages,
-    loadingInitialPartner,
-    sendingMessage,
-    unreadMessageCount,
+    sendingMessage: sendMessageMutation.isLoading,
     setNewMessage,
     sendMessage,
     selectConversation,
     startConversation,
-    fetchConversations,
-    fetchMessages,
-    fetchUnreadCount
+    startConversationAndNavigate,
+    conversationsError,
+    messagesError,
   };
 }
+
+// Serviço para ser usado por outros componentes
+export const MessagingService = {
+  startConversationAndNavigate: (targetUserId: number, setLocation: (path: string) => void) => {
+    // Esta função será implementada dentro do useMessaging hook
+    // e exposta através do contexto ou de uma forma que permita o acesso
+    // por componentes externos sem recriar o hook.
+    console.error('MessagingService.startConversationAndNavigate deve ser usado via hook useMessaging.');
+  }
+};
+
+

@@ -1,163 +1,137 @@
 
-import { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
+import { useLocation } from 'wouter';
+import { useMessaging } from '@/hooks/use-messaging';
 import { useAuth } from '@/hooks/use-auth';
-import { Loader2, Send, ChevronLeft, Plus, FileEdit, MessageCircle, Users } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { formatRelativeTime, getInitials } from '@/lib/utils';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useLocation } from 'wouter';
-import { useMessaging, Conversation } from '@/hooks/use-messaging';
-import { ContractDialog, ContractData } from '@/components/ContractDialog';
-import { ContractMessage } from '@/components/ContractMessage';
-import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { Send, Users, MessageCircle, ArrowLeft } from 'lucide-react';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import AplicationLayout from '@/components/layouts/ApplicationLayout';
 
 export default function Messages() {
-  const { user, isLoggedIn } = useAuth();
-  const [location] = useLocation();
-  const searchParams = new URLSearchParams(location.split('?')[1] || '');
-  const initialUserId = searchParams.get('userId');
+  const [location, setLocation] = useLocation();
+  const { user } = useAuth();
   
-  const [mobileViewMode, setMobileViewMode] = useState<'list' | 'detail'>(initialUserId ? 'detail' : 'list');
-  const [isContractDialogOpen, setIsContractDialogOpen] = useState(false);
-  const [contracts, setContracts] = useState<Array<{
-    id: string;
-    serviceDescription: string;
-    price: number;
-    terms: string;
-    status: 'pending' | 'accepted' | 'rejected' | 'paid';
-    createdAt: Date;
-    isFromCurrentUser: boolean;
-  }>>([]);
-  
+  // Extrair userId da URL se presente
+  const urlParams = new URLSearchParams(location.split('?')[1] || '');
+  const initialPartnerId = urlParams.get('userId');
+
   const {
     conversations,
     currentConversation,
     messages,
     newMessage,
+    unreadMessageCount,
     loadingConversations,
     loadingMessages,
-    loadingInitialPartner: loadingInitialUser,
     sendingMessage,
     setNewMessage,
-    sendMessage: handleSendMessage,
-    selectConversation: selectConversationBase,
-    startConversation: startConversationBase,
-  } = useMessaging(initialUserId);
+    sendMessage,
+    selectConversation,
+    conversationsError,
+    messagesError,
+  } = useMessaging(initialPartnerId);
 
-  // Handle contract creation
-  const handleSubmitContract = async (contractData: ContractData) => {
-    if (!currentConversation) return;
-    
-    const newContract = {
-      id: `contract-${Date.now()}`,
-      ...contractData,
-      status: 'pending' as const,
-      createdAt: new Date(),
-      isFromCurrentUser: true
-    };
-    
-    setContracts(prev => [...prev, newContract]);
-    
-    setNewMessage(`I've sent you a contract proposal for $${contractData.price} - ${contractData.serviceDescription}`);
-    await handleSendMessage();
-  };
-  
-  // Simulate accepting a contract
-  const handleAcceptContract = async (contractId: string) => {
-    setContracts(prev => 
-      prev.map(contract => 
-        contract.id === contractId 
-          ? { ...contract, status: 'accepted' as const } 
-          : contract
-      )
-    );
-    
-    setNewMessage("I've accepted your contract proposal. Let's proceed!");
-    await handleSendMessage();
-    
-    return Promise.resolve();
-  };
-  
-  // Simulate rejecting a contract
-  const handleRejectContract = async (contractId: string) => {
-    setContracts(prev => 
-      prev.map(contract => 
-        contract.id === contractId 
-          ? { ...contract, status: 'rejected' as const } 
-          : contract
-      )
-    );
-    
-    setNewMessage("I've declined your contract proposal. Let's discuss further.");
-    await handleSendMessage();
-    
-    return Promise.resolve();
-  };
-  
-  // Simulate paying for a contract
-  const handlePayContract = async (contractId: string) => {
-    setContracts(prev => 
-      prev.map(contract => 
-        contract.id === contractId 
-          ? { ...contract, status: 'paid' as const } 
-          : contract
-      )
-    );
-    
-    setNewMessage("I've processed the payment for our contract. Looking forward to working together!");
-    await handleSendMessage();
-    
-    return Promise.resolve();
-  };
-
-  // Process message input for contract keyword
+  // Log para debug
   useEffect(() => {
-    if (newMessage.toLowerCase().includes("contract please")) {
-      handleSendMessage();
-      
-      setTimeout(() => {
-        if (currentConversation) {
-          const designerContract = {
-            id: `contract-designer-${Date.now()}`,
-            serviceDescription: "Interior Design Consultation and Implementation",
-            price: 2500,
-            terms: "50% payment upfront\n25% after design approval\n25% upon completion\nDelivery in 4 weeks\nUp to 3 revisions included",
-            status: 'pending' as const,
-            createdAt: new Date(),
-            isFromCurrentUser: false
-          };
-          
-          setContracts(prev => [...prev, designerContract]);
-        }
-      }, 1500);
+    console.log('=== MESSAGES COMPONENT DEBUG ===');
+    console.log('initialPartnerId:', initialPartnerId);
+    console.log('currentConversation:', currentConversation);
+    console.log('currentConversation?.id:', currentConversation?.id);
+    console.log('conversations:', conversations);
+  }, [initialPartnerId, currentConversation, conversations]);
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    console.log('=== FORM SUBMIT ===');
+    console.log('currentConversation no handleSendMessage:', currentConversation);
+    console.log('currentConversation.id no handleSendMessage:', currentConversation?.id);
+    
+    if (!currentConversation?.id) {
+      console.error('ERRO: Tentativa de enviar mensagem sem conversa selecionada');
+      return;
     }
-  }, [newMessage, currentConversation, handleSendMessage]);
-
-  const selectConversation = (conversation: Conversation) => {
-    selectConversationBase(conversation);
-    setMobileViewMode('detail');
+    
+    await sendMessage();
   };
 
-  const handleBackToList = () => {
-    setMobileViewMode('list');
+  const handleConversationClick = (conversation: any) => {
+    console.log('=== CLIQUE NA CONVERSA ===');
+    console.log('Conversa clicada:', conversation);
+    console.log('ID da conversa clicada:', conversation.id);
+    
+    // CORREÇÃO: Garantir que o objeto conversation tenha a estrutura correta
+    if (!conversation.id) {
+      console.error('ERRO: Conversa sem ID válido');
+      return;
+    }
+    
+    selectConversation(conversation);
+    
+    // Atualizar URL para refletir a conversa selecionada
+    const newUrl = `/messages?userId=${conversation.otherUser.id}`;
+    console.log('Atualizando URL para:', newUrl);
+    setLocation(newUrl);
   };
 
-  if (!isLoggedIn || !user) {
+  const formatMessageTime = (dateString: string) => {
+    try {
+      return format(new Date(dateString), 'HH:mm', { locale: ptBR });
+    } catch (error) {
+      return '';
+    }
+  };
+
+  const formatConversationTime = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+      
+      if (diffInHours < 24) {
+        return format(date, 'HH:mm', { locale: ptBR });
+      } else {
+        return format(date, 'dd/MM', { locale: ptBR });
+      }
+    } catch (error) {
+      return '';
+    }
+  };
+
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map(word => word.charAt(0))
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  if (loadingConversations) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-xl p-8 text-center max-w-md w-full">
-          <div className="w-16 h-16 bg-amber-500 rounded-full flex items-center justify-center mx-auto mb-6">
-            <MessageCircle className="w-8 h-8 text-blue-600" />
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Acesso Necessário</h1>
-          <p className="text-gray-600 mb-6">Você precisa estar logado para acessar suas mensagens</p>
-          <Button 
-            onClick={() => window.location.href = '/auth'}
-            className="w-full bg-amber-600 hover:bg-amber-700 text-white font-medium py-3 rounded-xl transition-colors"
-          >
-            Fazer Login
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Carregando conversas...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (conversationsError) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <p className="text-red-600 mb-4">Erro ao carregar conversas</p>
+          <Button onClick={() => window.location.reload()}>
+            Tentar novamente
           </Button>
         </div>
       </div>
@@ -165,115 +139,109 @@ export default function Messages() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      <div className="container mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Mensagens</h1>
-          <p className="text-gray-600">Gerencie suas conversas com clientes e freelancers</p>
+    <AplicationLayout>
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        {/* Header */}
+        <div className="mb-6">
+          <div className="flex items-center gap-4 mb-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setLocation('/')}
+              className="lg:hidden"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex items-center gap-2">
+              <MessageCircle className="h-6 w-6 text-orange-500" />
+              <h1 className="text-2xl font-bold text-gray-900">Minhas negociações</h1>
+            </div>
+            {unreadMessageCount > 0 && (
+              <Badge variant="destructive" className="ml-2">
+                {unreadMessageCount}
+              </Badge>
+            )}
+          </div>
+          <p className="text-gray-600">
+            Gerencie suas conversas com clientes e freelancers
+          </p>
         </div>
-        
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden h-[calc(100vh-200px)]">
-          <div className="flex h-full">
-            {/* Conversations List */}
-            <div className={`w-full md:w-96 border-r border-gray-200 ${mobileViewMode === 'detail' ? 'hidden md:block' : 'block'}`}>
-              {/* Header */}
-              <div className="p-6 border-b border-gray-100 bg-gray-50/50">
-                <div className="flex justify-between items-center mb-4">
-                  <div className="flex items-center gap-2">
-                    <Users className="w-5 h-5 text-gray-600" />
-                    <h2 className="text-lg font-semibold text-gray-900">Conversas</h2>
-                  </div>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="border-amber-500 text-amber-600 hover:bg-amber-500 hover:border-amber-300 rounded-xl"
-                    onClick={() => window.location.href = '/home?showDesigners=true'}
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Buscar
-                  </Button>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="border-gray-200 text-gray-700 hover:bg-gray-50 rounded-xl"
-                    onClick={() => startConversationBase(1)}
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Emma
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="border-gray-200 text-gray-700 hover:bg-gray-50 rounded-xl"
-                    onClick={() => startConversationBase(2)}
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Jack
-                  </Button>
-                </div>
-              </div>
-              
-              {/* Conversations List */}
-              <ScrollArea className="h-[calc(100%-140px)]">
-                {loadingConversations ? (
-                  <div className="flex justify-center items-center h-full py-10">
-                    <Loader2 className="h-8 w-8 animate-spin text-amber-600" />
-                  </div>
-                ) : conversations.length === 0 ? (
-                  <div className="p-8 text-center">
-                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <MessageCircle className="w-8 h-8 text-gray-400" />
-                    </div>
-                    <p className="text-gray-500 font-medium mb-2">Nenhuma conversa ainda</p>
-                    <p className="text-sm text-gray-400">Clique nos botões acima para começar</p>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-200px)]">
+          {/* Lista de Conversas */}
+          <Card className="lg:col-span-1">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+              Meus Contatos 
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <ScrollArea className="h-[calc(100vh-300px)]">
+                {conversations.length === 0 ? (
+                  <div className="p-6 text-center text-gray-500">
+                    <MessageCircle className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                    <p>Nenhuma conversa ainda</p>
+                    <p className="text-sm">
+                      Inicie uma conversa visitando o perfil de um prestador no menu principal
+                    </p>
                   </div>
                 ) : (
-                  <div className="p-2">
-                    {conversations.map(conversation => (
-                      <div 
-                        key={conversation.partner.id} 
-                        className={`p-4 rounded-xl cursor-pointer transition-all duration-200 mb-2 ${
-                          currentConversation?.partner.id === conversation.partner.id 
-                            ? 'bg-amber-50 border-l-4 border-amber-500 shadow-sm' 
-                            : 'hover:bg-gray-50'
+                  <div className="space-y-1 p-2">
+                    {conversations.map((conversation) => (
+                      <div
+                        key={conversation.id}
+                        onClick={() => handleConversationClick(conversation)}
+                        className={`p-3 rounded-lg cursor-pointer transition-colors hover:bg-gray-50 ${
+                          currentConversation?.id === conversation.id
+                            ? 'bg-orange-50 border-l-4 border-orange-500'
+                            : ''
                         }`}
-                        onClick={() => selectConversation(conversation)}
                       >
-                        <div className="flex items-center">
+                        <div className="flex items-start gap-3">
                           <div className="relative">
-                            <Avatar className="h-12 w-12 mr-3 ring-2 ring-white shadow-sm">
-                              <AvatarImage src={conversation.partner.profileImage || undefined} alt={conversation.partner.name} />
-                              <AvatarFallback className="bg-gradient-to-br from-amber-500 to-amber-600 text-white font-semibold">
-                                {getInitials(conversation.partner.name)}
+                            <Avatar className="h-10 w-10">
+                              <AvatarImage 
+                                src={`https://api.dicebear.com/7.x/initials/svg?seed=${conversation.otherUser.name}`} 
+                              />
+                              <AvatarFallback className="bg-orange-100 text-orange-700">
+                                {getInitials(conversation.otherUser.name)}
                               </AvatarFallback>
                             </Avatar>
-                            <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white"></div>
+                            <div className="absolute -bottom-1 -right-1 h-3 w-3 bg-green-500 rounded-full border-2 border-white"></div>
                           </div>
+                          
                           <div className="flex-1 min-w-0">
-                            <div className="flex justify-between items-start mb-1">
-                              <h3 className="font-semibold text-gray-900 truncate">{conversation.partner.name}</h3>
-                              <span className="text-xs text-gray-500 flex-shrink-0 ml-2">
-                                {formatRelativeTime(conversation.lastMessage.createdAt.toString())}
-                              </span>
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-gray-900 truncate">
+                                  {conversation.otherUser.name}
+                                </p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <Badge 
+                                    variant={conversation.otherUser.type === 'prestador' ? 'default' : 'secondary'}
+                                    className="text-xs"
+                                  >
+                                    {conversation.otherUser.type === 'prestador' ? 'Prestador' : 'Cliente'}
+                                  </Badge>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-xs text-gray-500">
+                                  {formatConversationTime(conversation.updated_at)}
+                                </p>
+                                {conversation.unreadCount > 0 && (
+                                  <Badge variant="destructive" className="text-xs mt-1">
+                                    {conversation.unreadCount}
+                                  </Badge>
+                                )}
+                              </div>
                             </div>
-                            <div className="flex items-center justify-between">
-                              <p className="text-sm text-gray-600 truncate flex-1">
-                                {conversation.lastMessage.isFromUser ? 'Você: ' : ''}
-                                {conversation.lastMessage.content}
-                              </p>
-                              {conversation.unreadCount > 0 && (
-                                <Badge className="ml-2 bg-amber-600 hover:bg-amber-700 text-white text-xs px-2 py-1 rounded-full">
-                                  {conversation.unreadCount}
-                                </Badge>
-                              )}
-                            </div>
-                            <div className="mt-1">
-                              <Badge variant="secondary" className="text-xs bg-gray-100 text-gray-600">
-                                {conversation.partner.userType === 'designer' ? 'Arquiteto' : 'Cliente'}
-                              </Badge>
-                            </div>
+                            
+                            <p className="text-sm text-gray-500 truncate mt-1">
+                              {conversation.lastMessage?.content }
+                            </p>
                           </div>
                         </div>
                       </div>
@@ -281,194 +249,136 @@ export default function Messages() {
                   </div>
                 )}
               </ScrollArea>
-            </div>
-            
-            {/* Message Thread */}
-            <div className={`flex-1 flex flex-col ${mobileViewMode === 'list' ? 'hidden md:flex' : 'flex'}`}>
-              {loadingInitialUser ? (
-                <div className="flex flex-col justify-center items-center h-full">
-                  <Loader2 className="h-8 w-8 animate-spin text-amber-600 mb-4" />
-                  <p className="text-gray-500">Carregando conversas...</p>
-                </div>
-              ) : currentConversation ? (
-                <>
-                  {/* Chat Header */}
-                  <div className="p-6 border-b border-gray-100 bg-gray-50/50">
-                    <div className="flex items-center">
-                      {mobileViewMode === 'detail' && (
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          onClick={handleBackToList} 
-                          className="mr-3 md:hidden hover:bg-gray-100 rounded-xl"
+            </CardContent>
+          </Card>
+
+          {/* Área de Mensagens */}
+          <Card className="lg:col-span-2">
+            {currentConversation ? (
+              <>
+                {/* Header da Conversa */}
+                <CardHeader className="pb-3">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-10 w-10">
+                      <AvatarImage 
+                        src={`https://api.dicebear.com/7.x/initials/svg?seed=${currentConversation.otherUser.name}`} 
+                      />
+                      <AvatarFallback className="bg-orange-100 text-orange-700">
+                        {getInitials(currentConversation.otherUser.name)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-gray-900">
+                        {currentConversation.otherUser.name}
+                      </h3>
+                      <div className="flex items-center gap-2">
+                        <Badge 
+                          variant={currentConversation.otherUser.type === 'prestador' ? 'default' : 'secondary'}
+                          className="text-xs"
                         >
-                          <ChevronLeft className="h-5 w-5" />
-                        </Button>
-                      )}
-                      <div className="relative">
-                        <Avatar className="h-12 w-12 mr-4 ring-2 ring-white shadow-sm">
-                          <AvatarImage 
-                            src={currentConversation.partner.profileImage || undefined} 
-                            alt={currentConversation.partner.name} 
-                          />
-                          <AvatarFallback className="bg-gradient-to-br from-amber-500 to-amber-600 text-white font-semibold">
-                            {getInitials(currentConversation.partner.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="absolute -bottom-1 -right-2 w-4 h-4 bg-green-500 rounded-full border-2 border-white"></div>
-                      </div>
-                      <div>
-                        <h2 className="text-xl font-semibold text-gray-900">{currentConversation.partner.name}</h2>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Badge variant="secondary" className="bg-amber-100 text-amber-700">
-                            {currentConversation.partner.userType === 'designer' ? 'Arquiteto' : 'Cliente'}
-                          </Badge>
-                          <span className="text-sm text-green-600 font-medium">● Online</span>
+                          {currentConversation.otherUser.type === 'prestador' ? 'Prestador' : 'Cliente'}
+                        </Badge>
+                        <div className="flex items-center gap-1">
+                          <div className="h-2 w-2 bg-green-500 rounded-full"></div>
+                          <span className="text-xs text-gray-500">Online</span>
                         </div>
                       </div>
                     </div>
                   </div>
-                  
-                  {/* Messages Area */}
-                  <div className="flex-1 overflow-hidden flex flex-col">
-                    <ScrollArea className="flex-1 p-6">
-                      {loadingMessages ? (
-                        <div className="flex justify-center items-center h-full py-10">
-                          <Loader2 className="h-8 w-8 animate-spin text-amber-600" />
-                        </div>
-                      ) : messages.length === 0 && contracts.length === 0 ? (
-                        <div className="flex flex-col justify-center items-center h-full text-center">
-                          <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mb-4">
-                            <MessageCircle className="w-10 h-10 text-amber-600" />
+                </CardHeader>
+                
+                <Separator />
+
+                {/* Mensagens */}
+                <CardContent className="p-0 flex flex-col h-[calc(100vh-400px)]">
+                  <ScrollArea className="flex-1 p-4">
+                    {loadingMessages ? (
+                      <div className="flex items-center justify-center h-32">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
+                      </div>
+                    ) : messagesError ? (
+                      <div className="text-center text-red-600 p-4">
+                        Erro ao carregar mensagens
+                      </div>
+                    ) : messages.length === 0 ? (
+                      <div className="text-center text-gray-500 p-8">
+                        <MessageCircle className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                        <p>Nenhuma mensagem ainda</p>
+                        <p className="text-sm">Inicie a conversa enviando uma mensagem</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {messages.map((message) => (
+                          <div
+                            key={message.id}
+                            className={`flex ${
+                              message.sender_id === user?.id ? 'justify-end' : 'justify-start'
+                            }`}
+                          >
+                            <div
+                              className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                                message.sender_id === user?.id
+                                  ? 'bg-orange-500 text-white'
+                                  : 'bg-gray-100 text-gray-900'
+                              }`}
+                            >
+                              <p className="text-sm">{message.content}</p>
+                              <p
+                                className={`text-xs mt-1 ${
+                                  message.sender_id === user?.id
+                                    ? 'text-orange-200'
+                                    : 'text-gray-500'
+                                }`}
+                              >
+                                {formatMessageTime(message.created_at)}
+                              </p>
+                            </div>
                           </div>
-                          <p className="text-gray-500 font-medium mb-2">Nenhuma mensagem ainda</p>
-                          <p className="text-sm text-gray-400 max-w-sm">
-                            Inicie a conversa enviando uma mensagem ou proposta de contrato
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-6">
-                          {/* Regular messages */}
-                          {messages.map(message => (
-                            <div
-                              key={message.id}
-                              className={`flex ${message.senderId === user.id ? 'justify-end' : 'justify-start'}`}
-                            >
-                              <div className="flex items-end gap-2 max-w-[80%]">
-                                {message.senderId !== user.id && (
-                                  <Avatar className="h-8 w-8 mb-1">
-                                    <AvatarImage src={currentConversation.partner.profileImage || undefined} />
-                                    <AvatarFallback className="bg-gray-200 text-gray-600 text-xs">
-                                      {getInitials(currentConversation.partner.name)}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                )}
-                                <div
-                                  className={`px-4 py-3 rounded-2xl shadow-sm ${
-                                    message.senderId === user.id
-                                      ? 'bg-amber-600 text-white rounded-br-md'
-                                      : 'bg-gray-100 text-gray-900 rounded-bl-md'
-                                  }`}
-                                >
-                                  <p className="text-sm leading-relaxed">{message.content}</p>
-                                  <div className={`text-xs mt-2 ${
-                                    message.senderId === user.id ? 'text-amber-100' : 'text-gray-500'
-                                  }`}>
-                                    {formatRelativeTime(message.createdAt.toString())}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                          
-                          {/* Contract messages */}
-                          {contracts.map(contract => (
-                            <div
-                              key={contract.id}
-                              className={`flex ${contract.isFromCurrentUser ? 'justify-end' : 'justify-start'}`}
-                            >
-                              <div className="max-w-[80%]">
-                                <ContractMessage
-                                  contract={contract}
-                                  onAccept={handleAcceptContract}
-                                  onReject={handleRejectContract}
-                                  onPay={handlePayContract}
-                                />
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </ScrollArea>
-                    
-                    {/* Message Input */}
-                    <div className="p-6 border-t border-gray-100 bg-white">
-                      <form
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          handleSendMessage();
-                        }}
-                        className="flex items-end gap-3"
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+
+                  {/* Input de Mensagem */}
+                  <div className="p-4 border-t">
+                    <form onSubmit={handleSendMessage} className="flex gap-2">
+                      <Input
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        placeholder="Digite sua mensagem..."
+                        className="flex-1"
+                        disabled={sendingMessage}
+                      />
+                      <Button 
+                        type="submit" 
+                        disabled={!newMessage.trim() || sendingMessage || !currentConversation?.id}
+                        className="bg-orange-500 hover:bg-orange-600"
                       >
-                        <div className="flex-1 relative">
-                          <Input
-                            value={newMessage}
-                            onChange={(e) => setNewMessage(e.target.value)}
-                            placeholder="Digite sua mensagem..."
-                            disabled={sendingMessage}
-                            className="pr-12 py-3 rounded-xl border-gray-200 focus:border-amber-500 focus:ring-amber-500 resize-none"
-                          />
-                        </div>
-                        <Button 
-                          type="button" 
-                          variant="outline"
-                          onClick={() => setIsContractDialogOpen(true)}
-                          disabled={sendingMessage}
-                          className="p-3 border-gray-200 hover:bg-gray-50 rounded-xl"
-                          title="Criar Contrato"
-                        >
-                          <FileEdit className="h-5 w-5 text-gray-600" />
-                        </Button>
-                        <Button 
-                          type="submit" 
-                          disabled={sendingMessage || !newMessage.trim()}
-                          className="p-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                          {sendingMessage ? (
-                            <Loader2 className="h-5 w-5 animate-spin" />
-                          ) : (
-                            <Send className="h-5 w-5" />
-                          )}
-                        </Button>
-                      </form>
-                    </div>
+                        {sendingMessage ? (
+                          <div className="animate-spin rounded-full h-2 w-4 border-b-2 border-white"></div>
+                        ) : (
+                          <Send className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </form>
+                    
                   </div>
-                </>
-              ) : (
-                <div className="flex flex-col justify-center items-center h-full text-center p-8">
-                  <div className="w-24 h-24 bg-amber-100 rounded-full flex items-center justify-center mb-6">
-                    <MessageCircle className="w-12 h-12 text-amber-600" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-gray-900 mb-2">Selecione uma conversa</h3>
-                  <p className="text-gray-500 max-w-sm">
-                    Escolha uma conversa da lista ao lado para começar a trocar mensagens
-                  </p>
+                </CardContent>
+              </>
+            ) : (
+              <CardContent className="flex items-center justify-center h-full">
+                <div className="text-center text-gray-500">
+                  <MessageCircle className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+                  <h3 className="text-lg font-medium mb-2">Nenhuma mensagem ainda</h3>
+                  <p>Inicie a conversa enviando uma mensagem</p>
                 </div>
-              )}
-            </div>
-          </div>
+              </CardContent>
+            )}
+          </Card>
         </div>
       </div>
-      
-      {/* Contract Dialog */}
-      <ContractDialog
-        currentConversation={currentConversation}
-        onClose={() => setIsContractDialogOpen(false)}
-        open={isContractDialogOpen}
-        onOpenChange={setIsContractDialogOpen}
-        onSubmit={handleSubmitContract}
-      />
     </div>
+    </AplicationLayout>
   );
 }
 

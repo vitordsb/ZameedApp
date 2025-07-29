@@ -38,11 +38,8 @@ import {
   Image as ImageIcon,
   Grid3X3,
   Loader2,
-  Settings,
-  UserCheck,
   AlertCircle,
 } from "lucide-react";
-import { useAuth } from "@/hooks/use-auth";
 
 export interface ProviderApi {
   provider_id: number;
@@ -52,6 +49,9 @@ export interface ProviderApi {
   about: string | null;
   rating_mid: string;
   created_at: string;
+  updated_at?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface UserApi {
@@ -59,6 +59,15 @@ export interface UserApi {
   name: string;
   email: string;
   createdAt: string;
+  birth?: string;
+  gender?: string;
+  cpf?: string;
+  cnpj?: string;
+  type: string;
+  termos_aceitos?: boolean;
+  is_email_verified?: boolean;
+  perfil_completo?: boolean;
+  updatedAt?: string;
 }
 
 export interface Service {
@@ -68,6 +77,8 @@ export interface Service {
   description: string;
   price: string;
   created_at: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface PortfolioItem {
@@ -94,114 +105,145 @@ export default function ProviderProfile() {
   const { provider_id } = useParams<{ provider_id: string }>();
   const [, setLocation] = useLocation();
   const viewed = useRef(false);
-  
-  // Hook para acessar dados do usuário logado
-  const { user: currentUser } = useAuth();
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
 
   // Estados para portfólio
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [images, setImages] = useState<ImageItem[]>([]);
   const [loadingPortfolio, setLoadingPortfolio] = useState(true);
 
-  // 1) Provider - com estados de loading e error explícitos
-  const { 
-    data: provEnv, 
-    isLoading: isLoadingProvider, 
-    isError: isErrorProvider,
-    error: providerError 
-  } = useQuery<{ provider: ProviderApi }>({
+  // Estados para serviços
+  const [services, setServices] = useState<Service[]>([]);
+  const [loadingServices, setLoadingServices] = useState(true);
+  const [errorServices, setErrorServices] = useState<string | null>(null);
+
+  // Estados para dados atualizados
+  const [refreshedProvider, setRefreshedProvider] = useState<ProviderApi | null>(null);
+  const [refreshedUser, setRefreshedUser] = useState<UserApi | null>(null);
+  const [loadingRefresh, setLoadingRefresh] = useState(false);
+
+  // Obter user_id do usuário logado
+  useEffect(() => {
+    const token = sessionStorage.getItem("token");
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        setCurrentUserId(payload.user_id || payload.id);
+      } catch (error) {
+        console.error("Erro ao decodificar token:", error);
+      }
+    }
+  }, []);
+
+  // Função para buscar dados atualizados
+  const refreshData = async () => {
+    if (!provider_id) return;
+    
+    setLoadingRefresh(true);
+    try {
+      // Buscar provider atualizado
+      const providerRes = await apiRequest("GET", `/providers/${provider_id}`);
+      if (providerRes.ok) {
+        const providerData = await providerRes.json();
+        setRefreshedProvider(providerData.provider);
+        
+        // Buscar user atualizado
+        const userRes = await apiRequest("GET", `/users/${providerData.provider.user_id}`);
+        if (userRes.ok) {
+          const userData = await userRes.json();
+          setRefreshedUser(userData.user);
+        }
+      }
+    } catch (error) {
+      console.error("Erro ao atualizar dados:", error);
+    } finally {
+      setLoadingRefresh(false);
+    }
+  };
+
+  // 1) Provider - usando dados atualizados se disponíveis
+  const { data: provEnv, isLoading: isLoadingProvider } = useQuery<{ provider: ProviderApi }>({
     queryKey: ["provider", provider_id],
     enabled: !!provider_id,
     queryFn: async () => {
       const res = await apiRequest("GET", `/providers/${provider_id}`);
-      if (!res.ok) {
-        throw new Error(`Provider não encontrado: ${res.status}`);
-      }
+      if (!res.ok) throw new Error("Provider não encontrado");
       return res.json();
     },
-    retry: 2,
-    retryDelay: 1000,
   });
-  const provider = provEnv?.provider;
+  const provider = refreshedProvider || provEnv?.provider;
 
-  // 2) User - com estados de loading e error explícitos
+  // 2) User - usando dados atualizados se disponíveis
   const userId = provider?.user_id.toString();
-  const { 
-    data: userEnv, 
-    isLoading: isLoadingUser, 
-    isError: isErrorUser,
-    error: userError 
-  } = useQuery<{ user: UserApi }>({
+  const { data: userEnv, isLoading: isLoadingUser } = useQuery<{ user: UserApi }>({
     queryKey: ["user", userId],
     enabled: !!userId,
     queryFn: async () => {
-      // CORREÇÃO: Se for o usuário logado, usar os dados do contexto
-      if (currentUser && userId && parseInt(userId) === currentUser.id) {
-        console.log("Usando dados do usuário logado do contexto");
-        return { user: currentUser as UserApi };
-      }
-      
-      // Caso contrário, buscar na API
       const res = await apiRequest("GET", `/users/${userId}`);
-      if (!res.ok) {
-        throw new Error(`Usuário não encontrado: ${res.status}`);
-      }
+      if (!res.ok) throw new Error("Usuário não encontrado");
       return res.json();
     },
-    retry: 2,
-    retryDelay: 1000,
   });
-  const user = userEnv?.user;
+  const user = refreshedUser || userEnv?.user;
 
-  // 3) Verificar se é o próprio usuário
-  const isOwnProfile = currentUser && provider && currentUser.id === provider.user_id;
-
-  // 4) Incrementa view apenas uma vez e se for usuário diferente
+  // 3) Incrementa view apenas uma vez e se for usuário diferente
   useEffect(() => {
     if (
       provider &&
-      currentUser &&
-      currentUser.id !== provider.user_id &&
+      currentUserId &&
+      currentUserId !== provider.user_id &&
       !viewed.current
     ) {
-      // Verificar se já visualizou antes de incrementar
       checkAndIncrementView();
       viewed.current = true;
     }
-  }, [provider, currentUser]);
+  }, [provider, currentUserId]);
 
   const checkAndIncrementView = async () => {
     try {
-      // Aqui você pode implementar uma verificação se o usuário já visualizou
-      // Por enquanto, vamos incrementar diretamente
       await apiRequest("PATCH", `/providers/addview/${provider?.provider_id}`);
+      // Atualizar dados após incrementar view
+      await refreshData();
     } catch (error) {
       console.error("Erro ao incrementar visualização:", error);
     }
   };
 
-  // 5) Carrega e filtra serviços
-  const [services, setServices] = useState<Service[]>([]);
-  const [loadingSv, setLoadingSv] = useState(true);
+  // 4) Carrega e filtra serviços
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await apiRequest("GET", "/servicesfreelancer/getall");
-        const body = await res.json();
-        setServices(
-          (body.servicesFreelancer as Service[]).filter(
-            (s) => String(s.id_provider) === provider_id
-          )
-        );
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoadingSv(false);
-      }
-    })();
+    loadServices();
   }, [provider_id]);
 
-  // 6) Carrega portfólio
+  const loadServices = async () => {
+    if (!provider_id) return;
+    
+    setLoadingServices(true);
+    setErrorServices(null);
+    try {
+      const res = await apiRequest("GET", "/servicesfreelancer/getall");
+      if (!res.ok) {
+        throw new Error(`Erro ${res.status}: ${res.statusText}`);
+      }
+      
+      const body = await res.json();
+      const allServices = body.servicesFreelancer || [];
+      
+      // Filtrar serviços do provider específico
+      const filteredServices = allServices.filter(
+        (s: Service) => String(s.id_provider) === provider_id
+      );
+      
+      setServices(filteredServices);
+    } catch (error: any) {
+      console.error("Erro ao carregar serviços:", error);
+      setErrorServices(error.message);
+      setServices([]);
+    } finally {
+      setLoadingServices(false);
+    }
+  };
+
+  // 5) Carrega portfólio
   useEffect(() => {
     if (userId) {
       loadPortfolio();
@@ -209,6 +251,8 @@ export default function ProviderProfile() {
   }, [userId]);
 
   const loadPortfolio = async () => {
+    if (!userId) return;
+    
     try {
       setLoadingPortfolio(true);
       
@@ -280,8 +324,8 @@ export default function ProviderProfile() {
     return "/placeholder-image.jpg";
   };
 
-  // ESTADO DE CARREGAMENTO - Mostrar loading enquanto os dados estão sendo buscados
-  if (isLoadingProvider || isLoadingUser) {
+  // Loading state
+  if (isLoadingProvider || isLoadingUser || loadingRefresh) {
     return (
       <AplicationLayout>
         <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 flex items-center justify-center">
@@ -291,7 +335,7 @@ export default function ProviderProfile() {
             </div>
             <div className="space-y-2">
               <h3 className="text-xl font-semibold text-slate-700">Carregando perfil...</h3>
-              <p className="text-slate-500">Aguarde enquanto buscamos as informações do profissional.</p>
+              <p className="text-slate-500">Aguarde enquanto buscamos as informações mais recentes.</p>
             </div>
           </div>
         </div>
@@ -299,58 +343,17 @@ export default function ProviderProfile() {
     );
   }
 
-  // MENSAGEM PARA PRÓPRIO USUÁRIO - Exibir mensagem personalizada quando for o próprio perfil
-  if (isOwnProfile) {
+  if (!provider || !user) {
     return (
       <AplicationLayout>
         <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 flex items-center justify-center">
-          <div className="text-center space-y-6 bg-white/80 backdrop-blur-sm p-8 rounded-3xl border border-blue-200 shadow-xl max-w-md mx-4">
-            <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-blue-200 rounded-full flex items-center justify-center mx-auto">
-              <UserCheck className="h-10 w-10 text-blue-600" />
-            </div>
-            <div className="space-y-4">
-              <h3 className="text-xl font-semibold text-blue-700">Esse é o seu usuário</h3>
-              <p className="text-slate-600 leading-relaxed">
-                Por favor, se quiser ver informações, clique no seu perfil no canto superior direito e vá em "Meu Perfil".
-              </p>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Button 
-                onClick={() => setLocation("/profile")}
-                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold px-6 py-2 rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl"
-              >
-                <Settings className="h-4 w-4 mr-2" />
-                Ir para Meu Perfil
-              </Button>
-              <Button 
-                onClick={() => setLocation("/home")}
-                variant="outline"
-                className="border-slate-300 text-slate-600 hover:bg-slate-50 font-semibold px-6 py-2 rounded-xl transition-all duration-300 hover:scale-105"
-              >
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Voltar ao Início
-              </Button>
-            </div>
-          </div>
-        </div>
-      </AplicationLayout>
-    );
-  }
-
-  // ESTADO DE ERRO - Só mostrar "perfil não encontrado" se realmente houver erro ou dados não existirem
-  if (isErrorProvider || isErrorUser || !provider || !user) {
-    return (
-      <AplicationLayout>
-        <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 flex items-center justify-center">
-          <div className="text-center space-y-6 bg-white/80 backdrop-blur-sm p-8 rounded-3xl border border-red-200 shadow-xl">
-            <div className="w-20 h-20 bg-gradient-to-br from-red-100 to-red-200 rounded-full flex items-center justify-center mx-auto">
-              <AlertCircle className="h-10 w-10 text-red-600" />
+          <div className="text-center space-y-6 bg-white/80 backdrop-blur-sm p-8 rounded-3xl border border-white/20 shadow-xl">
+            <div className="w-20 h-20 bg-gradient-to-br from-orange-100 to-amber-200 rounded-full flex items-center justify-center mx-auto">
+              <User className="h-10 w-10 text-orange-500" />
             </div>
             <div className="space-y-2">
-              <h3 className="text-xl font-semibold text-red-700">Perfil não encontrado</h3>
-              <p className="text-red-600">
-                {providerError?.message || userError?.message || "O perfil que você está procurando não existe ou foi removido."}
-              </p>
+              <h3 className="text-xl font-semibold text-slate-700">Perfil não encontrado</h3>
+              <p className="text-slate-500">O perfil que você está procurando não existe ou foi removido.</p>
             </div>
             <Button 
               onClick={() => setLocation("/home")}
@@ -452,7 +455,9 @@ export default function ProviderProfile() {
                   transition={{ delay: 0.3, duration: 0.5 }}
                 >
                   <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-2 break-words">{user.name}</h1>
-                  <p className="text-lg sm:text-xl lg:text-2xl text-white/90 font-medium break-words">{provider.profession}</p>
+                  <p className="text-lg sm:text-xl lg:text-2xl text-white/90 font-medium break-words">
+                    {provider.profession || "Prestador de Serviços"}
+                  </p>
                 </motion.div>
 
                 {/* Badges de estatísticas */}
@@ -496,10 +501,18 @@ export default function ProviderProfile() {
                   </Button>
                   <Button
                     variant="outline"
-                    className="border-white text-orange-600 hover:bg-white hover:text-orange-600 font-semibold px-4 py-2 sm:px-6 sm:py-2 rounded-xl transition-all duration-300 hover:scale-105 text-sm sm:text-base"
+                    className="border-white text-white hover:bg-white hover:text-orange-600 font-semibold px-4 py-2 sm:px-6 sm:py-2 rounded-xl transition-all duration-300 hover:scale-105 text-sm sm:text-base"
                   >
                     <Heart className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
                     Favoritar
+                  </Button>
+                  <Button
+                    onClick={refreshData}
+                    variant="outline"
+                    className="border-white text-white hover:bg-white hover:text-orange-600 font-semibold px-4 py-2 sm:px-6 sm:py-2 rounded-xl transition-all duration-300 hover:scale-105 text-sm sm:text-base"
+                  >
+                    <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
+                    Atualizar
                   </Button>
                 </motion.div>
               </div>
@@ -511,6 +524,72 @@ export default function ProviderProfile() {
           {/* Coluna principal */}
           <div className="lg:col-span-2 space-y-6 lg:space-y-8">
             {/* Sobre mim */}
+{/* Portfólio */}
+            <motion.div
+              initial={{ x: -20, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ delay: 0.8, duration: 0.5 }}
+            >
+              <Card className="shadow-xl border-0 rounded-3xl bg-white/80 backdrop-blur-sm">
+                <CardHeader className="pb-4">
+                  <CardTitle className="flex items-center gap-3 text-xl sm:text-2xl">
+                    <div className="p-2 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl">
+                      <Grid3X3 className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                    </div>
+                    Portfólio
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {loadingPortfolio ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+                    </div>
+                  ) : portfolio.length === 0 ? (
+                    <div className="text-center py-8 text-slate-500">
+                      <ImageIcon className="w-12 h-12 mx-auto mb-4" />
+                      <p>Nenhum item no portfólio ainda.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                      {portfolio.map((item, index) => (
+                        <motion.div
+                          key={item.id}
+                          initial={{ scale: 0.9, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          transition={{ delay: 0.1 * index, duration: 0.5 }}
+                          className="group cursor-pointer"
+                        >
+                          <div className="bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 group-hover:scale-105">
+                            <div className="aspect-video bg-slate-100 overflow-hidden">
+                              {getImageUrl(item.image_id) ? (
+                                <img
+                                  src={getImageUrl(item.image_id)}
+                                  alt={item.title}
+                                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center">
+                                  <ImageIcon className="w-12 h-12 text-slate-400" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="p-4">
+                              <h4 className="font-semibold text-slate-800 mb-2 break-words">
+                                {item.title}
+                              </h4>
+                              <p className="text-sm text-slate-600 line-clamp-2 break-words">
+                                {item.description}
+                              </p>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+
             <motion.div
               initial={{ x: -20, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
@@ -526,86 +605,9 @@ export default function ProviderProfile() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="prose prose-lg max-w-none">
-                    <p className="text-slate-700 leading-relaxed text-base sm:text-lg">
-                      {provider.about || "Este profissional ainda não adicionou uma descrição sobre si. Entre em contato para saber mais sobre seus serviços e experiência."}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-
-            {/* Portfólio */}
-            <motion.div
-              initial={{ x: -20, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              transition={{ delay: 0.65, duration: 0.5 }}
-            >
-              <Card className="shadow-xl border-0 rounded-3xl bg-white/80 backdrop-blur-sm">
-                <CardHeader className="pb-4">
-                  <CardTitle className="flex items-center gap-3 text-xl sm:text-2xl">
-                    <div className="p-2 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl">
-                      <Grid3X3 className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
-                    </div>
-                    Portfólio
-                    <Badge className="bg-orange-100 text-orange-700 ml-auto">
-                      {portfolio.length} {portfolio.length === 1 ? 'projeto' : 'projetos'}
-                    </Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {loadingPortfolio ? (
-                    <div className="flex items-center justify-center py-12">
-                      <div className="animate-spin rounded-full h-12 w-12 border-4 border-orange-300 border-t-orange-600"></div>
-                    </div>
-                  ) : portfolio.length === 0 ? (
-                    <div className="text-center py-12">
-                      <div className="w-20 h-20 sm:w-24 sm:h-24 bg-gradient-to-br from-orange-100 to-amber-200 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <ImageIcon className="h-10 w-10 sm:h-12 sm:w-12 text-orange-400" />
-                      </div>
-                      <h3 className="text-lg font-semibold text-slate-700 mb-2">Nenhum projeto no portfólio</h3>
-                      <p className="text-slate-500">Este profissional ainda não adicionou projetos ao seu portfólio.</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                      {portfolio
-                        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-                        .slice(0, 3)
-                        .map((item, index) => (
-                          <motion.div
-                            key={item.id}
-                            initial={{ y: 20, opacity: 0 }}
-                            animate={{ y: 0, opacity: 1 }}
-                            transition={{ delay: 0.7 + index * 0.1, duration: 0.5 }}
-                          >
-                            <Card className="border border-white/30 hover:shadow-lg hover:shadow-orange-100/50 transition-all duration-300 hover:-translate-y-1 hover:scale-[1.02] bg-white/60 backdrop-blur-sm rounded-2xl overflow-hidden">
-                              <div className="aspect-video bg-gradient-to-br from-orange-100 to-amber-100 relative overflow-hidden">
-                                <img
-                                  src={getImageUrl(item.image_id)}
-                                  alt={item.title}
-                                  className="w-full h-full object-cover transition-transform duration-300 hover:scale-110"
-                                  onError={(e) => {
-                                    const target = e.target as HTMLImageElement;
-                                    target.src = "/placeholder-image.jpg";
-                                  }}
-                                />
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
-                              </div>
-                              <CardContent className="p-4">
-                                <h3 className="font-bold text-lg sm:text-xl text-slate-800 mb-2 line-clamp-1">{item.title}</h3>
-                                <p className="text-slate-600 leading-relaxed mb-4 text-sm sm:text-base line-clamp-2">
-                                  {item.description}
-                                </p>
-                                <div className="flex items-center text-xs sm:text-sm text-slate-500">
-                                  <Clock className="h-3 w-3 mr-1" />
-                                  {formatDate(item.created_at)}
-                                </div>
-                              </CardContent>
-                            </Card>
-                          </motion.div>
-                        ))}
-                    </div>
-                  )}
+                  <p className="text-slate-600 leading-relaxed text-sm sm:text-base">
+                    {provider.about || "Este prestador ainda não adicionou uma descrição sobre si."}
+                  </p>
                 </CardContent>
               </Card>
             </motion.div>
@@ -623,61 +625,57 @@ export default function ProviderProfile() {
                       <Briefcase className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                     </div>
                     Serviços Oferecidos
-                    <Badge className="bg-orange-100 text-orange-700 ml-auto">
-                      {services.length} {services.length === 1 ? 'serviço' : 'serviços'}
-                    </Badge>
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  {loadingSv ? (
-                    <div className="flex items-center justify-center py-12">
-                      <div className="animate-spin rounded-full h-12 w-12 border-4 border-orange-300 border-t-orange-600"></div>
+                <CardContent>
+                  {loadingServices ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+                    </div>
+                  ) : errorServices ? (
+                    <div className="text-center py-8 text-red-600">
+                      <AlertCircle className="w-12 h-12 mx-auto mb-4" />
+                      <p>Erro ao carregar serviços: {errorServices}</p>
                     </div>
                   ) : services.length === 0 ? (
-                    <div className="text-center py-12">
-                      <div className="w-20 h-20 sm:w-24 sm:h-24 bg-gradient-to-br from-orange-100 to-amber-200 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Briefcase className="h-10 w-10 sm:h-12 sm:w-12 text-orange-400" />
-                      </div>
-                      <h3 className="text-lg font-semibold text-slate-700 mb-2">Nenhum serviço cadastrado</h3>
-                      <p className="text-slate-500">Este profissional ainda não cadastrou nenhum serviço.</p>
+                    <div className="text-center py-8 text-slate-500">
+                      <Briefcase className="w-12 h-12 mx-auto mb-4" />
+                      <p>Nenhum serviço disponível no momento.</p>
                     </div>
                   ) : (
-                    <div className="grid gap-4">
-                      {services.map((s, index) => (
+                    <div className="grid gap-4 sm:gap-6">
+                      {services.map((service, index) => (
                         <motion.div
-                          key={s.id_serviceFreelancer}
+                          key={service.id_serviceFreelancer}
                           initial={{ y: 20, opacity: 0 }}
                           animate={{ y: 0, opacity: 1 }}
-                          transition={{ delay: 0.8 + index * 0.1, duration: 0.5 }}
+                          transition={{ delay: 0.1 * index, duration: 0.5 }}
+                          className="p-4 sm:p-6 border border-slate-200 rounded-2xl hover:shadow-lg transition-all duration-300 hover:border-orange-300 bg-white/50"
                         >
-                          <Card className="border border-white/30 hover:shadow-lg hover:shadow-orange-100/50 transition-all duration-300 hover:-translate-y-1 hover:scale-[1.02] bg-white/60 backdrop-blur-sm rounded-2xl">
-                            <CardContent className="p-4 sm:p-6">
-                              <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
-                                <div className="flex-1 min-w-0">
-                                  <h3 className="font-bold text-lg sm:text-xl text-slate-800 mb-2 break-words">{s.title}</h3>
-                                  <p className="text-slate-600 leading-relaxed mb-4 text-sm sm:text-base break-words">
-                                    {s.description}
-                                  </p>
-                                  <div className="flex items-center text-xs sm:text-sm text-slate-500">
-                                    <Clock className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
-                                    Criado em {formatDate(s.created_at)}
-                                  </div>
-                                </div>
-                                <div className="text-right flex-shrink-0 w-full sm:w-auto">
-                                  <div className="flex items-center justify-center sm:justify-end text-xl sm:text-2xl font-bold text-green-600 mb-2">
-                                    <DollarSign className="h-5 w-5 sm:h-6 sm:w-6" />
-                                    {parseFloat(s.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                  </div>
-                                  <Button
-                                    size="sm"
-                                    className="w-full sm:w-auto bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-semibold rounded-xl transition-all duration-300 hover:scale-105"
-                                  >
-                                    Ver Detalhes
-                                  </Button>
-                                </div>
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-semibold text-lg sm:text-xl text-slate-800 mb-2 break-words">
+                                {service.title}
+                              </h3>
+                              <p className="text-slate-600 text-sm sm:text-base leading-relaxed break-words">
+                                {service.description}
+                              </p>
+                            </div>
+                            <div className="flex flex-col items-start sm:items-end gap-2 flex-shrink-0">
+                              <div className="flex items-center gap-2">
+                                <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
+                                <span className="text-xl sm:text-2xl font-bold text-green-600">
+                                  R$ {service.price}
+                                </span>
                               </div>
-                            </CardContent>
-                          </Card>
+                              <Button
+                                size="sm"
+                                className="bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-semibold px-4 py-2 rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl text-xs sm:text-sm"
+                              >
+                                Contratar Serviço
+                              </Button>
+                            </div>
+                          </div>
                         </motion.div>
                       ))}
                     </div>
@@ -685,10 +683,11 @@ export default function ProviderProfile() {
                 </CardContent>
               </Card>
             </motion.div>
-          </div>
+
+                      </div>
 
           {/* Sidebar */}
-          <div className="space-y-6">
+          <div className="space-y-6 lg:space-y-8">
             {/* Estatísticas */}
             <motion.div
               initial={{ x: 20, opacity: 0 }}
@@ -696,7 +695,7 @@ export default function ProviderProfile() {
               transition={{ delay: 0.9, duration: 0.5 }}
             >
               <Card className="shadow-xl border-0 rounded-3xl bg-white/80 backdrop-blur-sm">
-                <CardHeader>
+                <CardHeader className="pb-4">
                   <CardTitle className="flex items-center gap-3 text-lg sm:text-xl">
                     <div className="p-2 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl">
                       <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
@@ -705,66 +704,81 @@ export default function ProviderProfile() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="text-center p-3 sm:p-4 bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl">
-                      <div className={`text-xl sm:text-2xl font-bold ${getRatingColor(provider.rating_mid)}`}>
-                        {provider.rating_mid}
-                      </div>
-                      <div className="text-xs sm:text-sm text-slate-500">Avaliação</div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Star className="w-4 h-4 text-yellow-500" />
+                      <span className="text-sm text-slate-600">Avaliação</span>
                     </div>
-                    <div className="text-center p-3 sm:p-4 bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl">
-                      <div className="text-xl sm:text-2xl font-bold text-blue-600">
-                        {provider.views_profile}
-                      </div>
-                      <div className="text-xs sm:text-sm text-slate-500">Visualizações</div>
-                    </div>
+                    <span className={`font-semibold ${getRatingColor(provider.rating_mid)}`}>
+                      {provider.rating_mid}/5.0
+                    </span>
                   </div>
-                  <div className="text-center p-3 sm:p-4 bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl">
-                    <div className="text-xl sm:text-2xl font-bold text-green-600">
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Eye className="w-4 h-4 text-blue-500" />
+                      <span className="text-sm text-slate-600">Visualizações</span>
+                    </div>
+                    <span className="font-semibold text-slate-800">
+                      {provider.views_profile}
+                    </span>
+                  </div>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Briefcase className="w-4 h-4 text-green-500" />
+                      <span className="text-sm text-slate-600">Serviços</span>
+                    </div>
+                    <span className="font-semibold text-slate-800">
                       {services.length}
-                    </div>
-                    <div className="text-xs sm:text-sm text-slate-500">Serviços Ativos</div>
+                    </span>
                   </div>
-                  <div className="text-center p-3 sm:p-4 bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl">
-                    <div className="text-xl sm:text-2xl font-bold text-purple-600">
-                      {portfolio.length}
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-purple-500" />
+                      <span className="text-sm text-slate-600">Membro há</span>
                     </div>
-                    <div className="text-xs sm:text-sm text-slate-500">Projetos no Portfólio</div>
+                    <span className="font-semibold text-slate-800">
+                      {getSince(user.createdAt)}
+                    </span>
                   </div>
                 </CardContent>
               </Card>
             </motion.div>
 
-            {/* Ações */}
+            {/* Informações de contato */}
             <motion.div
               initial={{ x: 20, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               transition={{ delay: 1.0, duration: 0.5 }}
             >
               <Card className="shadow-xl border-0 rounded-3xl bg-white/80 backdrop-blur-sm">
-                <CardContent className="p-4 sm:p-6 space-y-3">
-                  <Button
-                    className="w-full bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-semibold py-2.5 sm:py-3 rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl text-sm sm:text-base"
-                    onClick={() => setLocation(`/messages?userId=${user.id}`)}
-                  >
-                    <MessageCircle className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
-                    Enviar Mensagem
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    className="w-full border-orange-300 text-orange-600 hover:bg-orange-50 font-semibold py-2.5 sm:py-3 rounded-xl transition-all duration-300 hover:scale-105 text-sm sm:text-base"
-                  >
-                    <Heart className="w-4 h-4 sm:w-5 sm:h-5 mr-2" /> 
-                    Favoritar Perfil
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="w-full border-slate-300 text-slate-600 hover:bg-slate-50 font-semibold py-2.5 sm:py-3 rounded-xl transition-all duration-300 hover:scale-105 text-sm sm:text-base"
-                    onClick={() => setLocation("/home")}
-                  >
-                    <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 mr-2" /> 
-                    Voltar ao Início
-                  </Button>
+                <CardHeader className="pb-4">
+                  <CardTitle className="flex items-center gap-3 text-lg sm:text-xl">
+                    <div className="p-2 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl">
+                      <Mail className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                    </div>
+                    Contato
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-3">
+                    <Button
+                      onClick={() => setLocation(`/messages?userId=${user.id}`)}
+                      className="w-full bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-semibold py-3 rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl"
+                    >
+                      <MessageCircle className="w-4 h-4 mr-2" />
+                      Enviar Mensagem
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full border-orange-300 text-orange-600 hover:bg-orange-50 font-semibold py-3 rounded-xl transition-all duration-300 hover:scale-105"
+                    >
+                      <Heart className="w-4 h-4 mr-2" />
+                      Adicionar aos Favoritos
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             </motion.div>
@@ -772,7 +786,7 @@ export default function ProviderProfile() {
         </div>
       </motion.div>
     </div>
-    </AplicationLayout> 
+    </AplicationLayout>
   );
 }
 

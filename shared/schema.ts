@@ -11,7 +11,6 @@ import {
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// ---------- Users ----------
 export const users = mysqlTable("users", {
   id: int("id").primaryKey().autoincrement(),
   name: varchar("name", { length: 255 }).notNull(),
@@ -29,6 +28,7 @@ export const users = mysqlTable("users", {
   updatedAt: datetime("updated_at").notNull()
 });
 
+// ---------- Users ----------
 export const insertUserSchema = createInsertSchema(users)
   .omit({ id: true, createdAt: true, updatedAt: true })
   .extend({

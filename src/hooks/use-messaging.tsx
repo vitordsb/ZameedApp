@@ -90,7 +90,7 @@ export function useMessaging(initialPartnerId?: string | null) {
     },
     enabled: isLoggedIn && !!user,
     staleTime: 30000, // 30 segundos
-    refetchInterval: 60000, // Refetch a cada 1 minuto
+    refetchInterval: 3000, // Refetch a cada 10 segundos 
   });
 
   // Buscar dados de usuários para as conversas

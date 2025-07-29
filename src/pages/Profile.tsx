@@ -1,5 +1,6 @@
 
 
+
 // src/pages/Profile.tsx
 import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
@@ -174,12 +175,55 @@ export default function Profile() {
     description: string;
   }>({ title: "", description: "" });
 
+  // Estados para postagem de demanda
+  const [newDemand, setNewDemand] = useState<{
+    title: string;
+    description: string;
+  }>({ title: "", description: "" });
+  const [postingDemand, setPostingDemand] = useState(false);
+
   // Estado para taxa de conclusão
   const [completionRate, setCompletionRate] = useState(0);
 
   // Estado para dados do provider
   const [providerData, setProviderData] = useState<Provider | null>(null);
   const [loadingProvider, setLoadingProvider] = useState(false);
+
+  // Função para postar demanda
+  const handlePostDemand = async () => {
+    if (!user || user.type === "prestador") return;
+    if (!newDemand.title || !newDemand.description) {
+      toast({
+        title: "Campos incompletos",
+        description: "Por favor, preencha o título e a descrição da demanda.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setPostingDemand(true);
+    try {
+      const payload = { ...newDemand, user_id: user.id };
+      const res = await apiRequest("POST", "/demands", payload);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `Status ${res.status}`);
+      }
+      toast({
+        title: "Sucesso",
+        description: "Demanda postada com sucesso!",
+      });
+      setNewDemand({ title: "", description: "" });
+    } catch (err: any) {
+      toast({
+        title: "Erro ao postar demanda",
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setPostingDemand(false);
+    }
+  };
 
   // Máscaras de formatação
   const formatCPF = (value: string) => {
@@ -720,15 +764,97 @@ export default function Profile() {
                   <h3 className="text-lg font-semibold text-slate-700">Completude do Perfil</h3>
                   <span className="text-sm font-medium text-slate-600">{completionRate}%</span>
                 </div>
-                <Progress value={completionRate} className="h-3" />
-                <p className="text-sm text-slate-500">
-                  Complete seu perfil para aumentar suas chances de ser encontrado por clientes.
-                </p>
-              </div>
+               <Progress value={completionRate} className="w-[60%]" />
+        </div>
+
+        {user.type === "contratante" && (
+          <div className="bg-white p-6 rounded-lg shadow-md mb-6">
+            <h2 className="text-2xl font-bold mb-4">Postar Nova Demanda</h2>
+            <div className="mb-4">
+              <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="demandTitle">
+                Título da Demanda:
+              </label>
+              <input
+                type="text"
+                id="demandTitle"
+                className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                value={newDemand.title}
+                onChange={(e) => setNewDemand({ ...newDemand, title: e.target.value })}
+              />
+            </div>
+            <div className="mb-4">
+              <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="demandDescription">
+                Descrição:
+              </label>
+              <textarea
+                id="demandDescription"
+                className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                value={newDemand.description}
+                onChange={(e) => setNewDemand({ ...newDemand, description: e.target.value })}
+              ></textarea>
+            </div>
+            <button
+              className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+              onClick={handlePostDemand}
+              disabled={postingDemand}
+            >
+              {postingDemand ? 'Postando...' : 'Postar Demanda'}
+            </button>
+          </div>
+        )}
             </CardContent>
           </Card>
 
-          {/* Seções específicas para prestadores */}
+          {/* Seção de Postar Demanda (apenas para não-prestadores) */}
+          {user?.type !== "prestador" && (
+            <Card className="w-full max-w-4xl mx-auto mb-8 shadow-lg rounded-lg">
+              <CardHeader>
+                <CardTitle className="text-2xl font-bold text-orange-600 flex items-center">
+                  <TrendingUp className="mr-2" /> Postar Nova Demanda
+                </CardTitle>
+                <CardDescription>Descreva o serviço que você precisa e encontre os melhores profissionais.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <label htmlFor="demand-title" className="block text-sm font-medium text-gray-700 mb-1">Título da Demanda</label>
+                  <Input
+                    id="demand-title"
+                    placeholder="Ex: Projeto de Interiores para Apartamento"
+                    value={newDemand.title}
+                    onChange={(e) => setNewDemand({ ...newDemand, title: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="demand-description" className="block text-sm font-medium text-gray-700 mb-1">Descrição Detalhada</label>
+                  <Textarea
+                    id="demand-description"
+                    placeholder="Descreva o escopo, requisitos, prazos e qualquer detalhe importante."
+                    value={newDemand.description}
+                    onChange={(e) => setNewDemand({ ...newDemand, description: e.target.value })}
+                    rows={5}
+                  />
+                </div>
+                <Button
+                  onClick={handlePostDemand}
+                  disabled={postingDemand}
+                  className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-2 rounded-md transition-colors"
+                >
+                  {postingDemand ? (
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Postando Demanda...</>
+                  ) : (
+                    "Postar Demanda"
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Seção de Gerenciamento de Demandas (apenas para não-prestadores) */}
+          {user?.type !== "prestador" && (
+            <DemandsManager userId={user?.id} />
+          )}
+
+          {/* Seção de Portfólio (apenas para prestadores) */}
           {user.type === "prestador" && (
             <>
               {/* Seção de Portfólio */}

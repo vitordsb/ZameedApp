@@ -8,15 +8,17 @@ import Navbar from "@/components/Navbar";
 export default function AuthPage() {
   const [isLoginOpen, setIsLoginOpen] = useState<boolean>(false);
   const [isRegisterOpen, setIsRegisterOpen] = useState<boolean>(false);
-  const { isLoggedIn, isGuest, loginAsGuest } = useAuth();
+  const { isLoggedIn } = useAuth();
   const [location, navigate] = useLocation();
-  
+  const [justLoggedIn, setJustLoggedIn] = useState(false); 
+
   useEffect(() => {
-    if (isLoggedIn || isGuest) {  
-      navigate("/home");
-    }
-  }, [isLoggedIn, navigate, isGuest]);
-  const handleSwitchToRegister = () => {
+  if (isLoggedIn && justLoggedIn) {
+    const lastRoute = sessionStorage.getItem("last_route");
+    const shouldGo = !lastRoute || lastRoute === "/auth" ? "/home" : lastRoute;
+    navigate(shouldGo);
+  }
+}, [isLoggedIn, justLoggedIn, navigate]);  const handleSwitchToRegister = () => {
     setIsLoginOpen(false);
     setIsRegisterOpen(true);
   };
@@ -27,11 +29,10 @@ export default function AuthPage() {
   };
 
   const handleAuthSuccess = () => {
-    navigate("/home");
+    setJustLoggedIn(true);
   };
 
   const handleGuest = () => {
-    loginAsGuest();
     navigate("/home");
   }
   return (

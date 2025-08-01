@@ -1,9 +1,9 @@
+import { useEffect } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { Toaster } from "@/components/ui/toaster";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
-import { AuthProvider } from "@/hooks/use-auth";
-import { ProtectedRoute } from "@/lib/protected-route";
+import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import SocialFeed from "@/pages/SocialFeed";
@@ -11,52 +11,63 @@ import ClientProfile from "@/pages/ClientProfile";
 import DemandsFeed from "@/pages/DemandsFeed";
 import ProviderProfile from "@/pages/ProviderProfile";
 import AuthPage from "@/pages/auth-page";
-import AdminDashboard from "@/pages/AdminDashboard";
 import Messages from "@/pages/Messages";
-import AdminBootstrap from "@/pages/AdminBootstrap";
 import ServicePage from "@/pages/ServicePage";
 import LandingLayout from "@/components/layouts/LandingLayout";
 import ApplicationLayout from "@/components/layouts/ApplicationLayout";
 import ServicesFeed from "@/pages/ServicesFeed.tsx";
 import Profile from "@/pages/Profile";
-// ProtectedRoutes that should use the landing page layout
+// Routes that should use the landing page layout
 const LANDING_ROUTES = ["/", "/auth"];
 
-function ProtectedRouter() {
+function Router() {
   return (
     <Switch>
-      {/* ProtectedRoutes that should use the landing page layout */}
       <Route path="/" component={Home} />
       <Route path="/auth" component={AuthPage} />
-      {/* ProtectedRoutes that should use the application layout */}
-      <ProtectedRoute path="/profile" component={Profile} guestAllowed />
-      <ProtectedRoute path="/home" component={SocialFeed} guestAllowed />
-      <ProtectedRoute path="/home/demands" component={DemandsFeed} guestAllowed />
-      <ProtectedRoute path="/home/viewService" component={ServicePage} guestAllowed />
-      <ProtectedRoute path="/home/services" component={ServicesFeed} guestAllowed />
-      <ProtectedRoute path="/providers/:provider_id" component={ProviderProfile} guestAllowed />
-      <ProtectedRoute path="/user/:user_id" component={ClientProfile} guestAllowed />
-      <ProtectedRoute path="/messages" component={Messages} />
-      {/* Admin routes */}
-      <ProtectedRoute path="/admin-bootstrap" component={AdminBootstrap} guestAllowed={false} />
-      <ProtectedRoute path="/admin" component={AdminDashboard} guestAllowed={false} />
-      {/* Fallback to 404 */}
+      <Route path="/profile" component={Profile} />
+      <Route path="/home" component={SocialFeed} />
+      <Route path="/home/demands" component={DemandsFeed} />
+      <Route path="/home/viewService" component={ServicePage} />
+      <Route path="/home/services" component={ServicesFeed} />
+      <Route path="/providers/:provider_id" component={ProviderProfile} />
+      <Route path="/user/:user_id" component={ClientProfile} />
+      <Route path="/messages" component={Messages} />
       <Route component={NotFound} />
     </Switch>
   );
 }
+function AppContent() {
+  const [location, navigate] = useLocation();
+  const { isLoggedIn, isInitialized } = useAuth(); // ✅ AGORA SIM!
 
-function App() {
-  const [location] = useLocation();
-  const isLandingPage = LANDING_ROUTES.includes(location);
-  const Layout = isLandingPage ? LandingLayout : ApplicationLayout as any;
+  const isPublic = LANDING_ROUTES.includes(location);
+  const isLandingPage = isPublic;
+  const Layout = isLandingPage ? LandingLayout : (ApplicationLayout as any);
+
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    if (!isLoggedIn && !isPublic) {
+      navigate("/auth");
+    }
+  }, [isInitialized, isLoggedIn, isPublic, navigate]);
+
+  useEffect(() => {
+    sessionStorage.setItem("last_route", location);
+  }, [location]);
 
   return (
+    <Layout>
+      <Router />
+    </Layout>
+  );
+}
+function App() {
+    return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <Layout>
-          <ProtectedRouter />
-        </Layout>
+        <AppContent />
         <Toaster />
       </AuthProvider>
     </QueryClientProvider>

@@ -17,6 +17,7 @@ export interface User {
   name: string;
   email: string;
   cpf?: string;
+  payload: string;
   birth: string;
   gender: string;
   cnpj?: string;
@@ -43,6 +44,7 @@ export interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isLoggedIn: boolean;
+  isInitialized: boolean; 
   login: (data: LoginData) => Promise<void>;
   registerUser: (data: RegisterPayload) => Promise<void>;
   logout: () => Promise<void>;
@@ -71,21 +73,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const [isInitialized, setIsInitialized] = useState(false); 
   // Restaura sessão
   useEffect(() => {
-    const token = sessionStorage.getItem("token");
-    const expiry = sessionStorage.getItem("tokenExpiry");
-    if (token && expiry && Number(expiry) > Date.now()) {
-      try {
-        const payload = parseJwt<User>(token);
-        setUser(payload.id ? payload : null);
-      } catch {
-        sessionStorage.clear();
-        setUser(null);
-      }
+  const token = sessionStorage.getItem("token");
+  const expiry = sessionStorage.getItem("tokenExpiry");
+  if (token && expiry && Number(expiry) > Date.now()) {
+    try {
+      const payload = parseJwt<User>(token);
+      setUser(payload.id ? payload : null);
+    } catch {
+      sessionStorage.clear();
+      setUser(null);
     }
-    setIsLoading(false);
-  }, []);
+  }
+  setIsInitialized(true); // ✅ MARCA COMO CONCLUÍDO
+  setIsLoading(false);
+}, []);
 
   const login = async (data: LoginData) => {
     loginSchema.parse(data);
@@ -150,6 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         registerUser,
         logout,
+        isInitialized,
       }}
     >
       {children}

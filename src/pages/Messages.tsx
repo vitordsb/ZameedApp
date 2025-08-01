@@ -140,41 +140,15 @@ export default function Messages() {
 
   return (
     <AplicationLayout>
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        {/* Header */}
-        <div className="mb-6">
-          <div className="flex items-center gap-4 mb-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setLocation('/')}
-              className="lg:hidden"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <div className="flex items-center gap-2">
-              <MessageCircle className="h-6 w-6 text-orange-500" />
-              <h1 className="text-2xl font-bold text-gray-900">Minhas negociações</h1>
-            </div>
-            {unreadMessageCount > 0 && (
-              <Badge variant="destructive" className="ml-2">
-                {unreadMessageCount}
-              </Badge>
-            )}
-          </div>
-          <p className="text-gray-600">
-            Gerencie suas conversas com clientes e freelancers
-          </p>
-        </div>
+    <div className="bg-gray-50">
+      <div className="max-w-8px px-10 py-10">
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-200px)]">
-          {/* Lista de Conversas */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[calc(100vh-200px)]">
           <Card className="lg:col-span-1">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
-              Meus Contatos 
+              Contatos com propostas 
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
@@ -290,7 +264,7 @@ export default function Messages() {
                 <Separator />
 
                 {/* Mensagens */}
-                <CardContent className="p-0 flex flex-col h-[calc(100vh-400px)]">
+                <CardContent className="p-0 flex flex-col h-[calc(100vh-250px)]">
                   <ScrollArea className="flex-1 p-4">
                     {loadingMessages ? (
                       <div className="flex items-center justify-center h-32">

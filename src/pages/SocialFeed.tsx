@@ -98,6 +98,168 @@ interface FreelancerServicesResponse {
   success: boolean;
 }
 
+// Componente UserBanner integrado
+const UserBanner = ({ userId, className = '' }) => {
+  const [imageUrl, setImageUrl] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+
+  useEffect(() => {
+    const fetchUserImage = async () => {
+      if (!userId) {
+        setLoading(false);
+        setError(true);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        setError(false);
+
+       const response = await apiRequest("GET", `/users/images/${userId}`); 
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        if (data.success && data.images && data.images.length > 0) {
+          const firstImage = data.images[0];
+          if (firstImage.image_url) {
+            setImageUrl(firstImage.image_url);
+          } else {
+            setError(true);
+          }
+        } else {
+          setError(true);
+        }
+      } catch (err) {
+        console.error('Erro ao buscar imagem do usuário:', err);
+        setError(true);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserImage();
+  }, [userId]);
+
+  const bannerStyle = {
+    width: '100%',
+    height: '80px', // Altura reduzida para cards
+    borderRadius: '8px 8px 0 0',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat',
+    backgroundColor: error || !imageUrl ? '#FEF8C3' : 'transparent',
+    backgroundImage: imageUrl && !error ? `url(${imageUrl})` : 'none'
+  };
+
+  if (loading) {
+    return (
+      <div className={`${className}`} style={{...bannerStyle, backgroundColor: '#f3f4f6'}}>
+        <div className="text-gray-500 text-xs">Carregando...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`${className}`} style={bannerStyle}>
+      {(error || !imageUrl) && (
+        <div className="text-gray-600 text-xs">
+          teste de debug 
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Componente Avatar do usuário para o perfil
+const UserAvatar = ({ userId, className = '', size = 'md' }) => {
+  const [imageUrl, setImageUrl] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const fetchUserImage = async () => {
+      if (!userId) {
+        setLoading(false);
+        setError(true);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        setError(false);
+
+       const response = await apiRequest("GET", `/users/images/${userId}`); 
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        if (data.success && data.images && data.images.length > 0) {
+          const firstImage = data.images[0];
+          if (firstImage.image_url) {
+            setImageUrl(firstImage.image_url);
+          } else {
+            setError(true);
+          }
+        } else {
+          setError(true);
+        }
+      } catch (err) {
+        console.error('Erro ao buscar imagem do usuário:', err);
+        setError(true);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserImage();
+  }, [userId]);
+
+  const sizeClasses = {
+    sm: 'w-12 h-12',
+    md: 'w-16 h-16',
+    lg: 'w-20 h-20',
+    xl: 'w-24 h-24'
+  };
+
+  if (loading) {
+    return (
+      <div className={`${sizeClasses[size]} rounded-full bg-gray-200 flex items-center justify-center ${className}`}>
+        <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  if (error || !imageUrl) {
+    return (
+      <div className={`${sizeClasses[size]} rounded-full bg-orange-100 flex items-center justify-center ${className}`}>
+        <User className="w-6 h-6 text-orange-600" />
+      </div>
+    );
+  }
+
+  return (
+    <div className={`${sizeClasses[size]} rounded-full overflow-hidden border-4 border-white shadow-lg ${className}`}>
+      <img 
+        src={imageUrl} 
+        alt="Avatar do usuário" 
+        className="w-full h-full object-cover"
+      />
+    </div>
+  );
+};
+
 const locations = [
   { label: "São Paulo", value: "sao-paulo" },
   { label: "Rio de Janeiro", value: "rio-de-janeiro" },
@@ -165,7 +327,7 @@ export default function SocialFeed() {
     }
 
     try {
-      console.log('Iniciando conversa com usuário:', targetUserId);
+      console.log("Iniciando conversa com usuário:", targetUserId);
       await startConversationAndNavigate(targetUserId, setLocation);
       toast({
         title: "Conversa iniciada",
@@ -420,7 +582,7 @@ export default function SocialFeed() {
 
   return (
     <ApplicationLayout>
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-amber-50 to-indigo-50">
+      <div className="min-h-screen bg-gray-100">
         {/* Banner Superior com Carrossel */}
         <div className="relative h-96 overflow-hidden bg-gradient-to-r from-orange-500 to-orange-600 mb-8">
           <div className="absolute inset-0">
@@ -500,277 +662,226 @@ export default function SocialFeed() {
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
+        <div className="container mx-auto px-4 py-8">
           {/* Barra de Pesquisa e Filtros */}
-          <Card className="mb-8 shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-            <CardContent className="p-6">
-              <div className="flex flex-col md:flex-row gap-4">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                  <Input
-                    placeholder="Buscar por nome ou profissão..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="pl-10 h-12 border-slate-200 focus:border-orange-400 focus:ring-orange-400"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <select
-                    value={serviceFilter}
-                    onChange={(e) => setServiceFilter(e.target.value)}
-                    className="px-4 py-3 border border-slate-200 rounded-lg focus:border-orange-400 focus:ring-orange-400 bg-white"
-                  >
-                    <option value="">Todos os serviços</option>
-                    {servicesList.map((service) => (
-                      <option key={service} value={service}>
-                        {service}
-                      </option>
-                    ))}
-                  </select>
-                  <Button variant="outline" className="px-6 border-slate-200 hover:bg-orange-50 hover:border-orange-300">
-                    <Filter className="h-4 w-4 mr-2" />
-                    Filtros
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Estatísticas Rápidas */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0 shadow-lg">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-blue-100 text-sm font-medium">Total Prestadores</p>
-                    <p className="text-3xl font-bold">{allProviders.length}</p>
-                  </div>
-                  <Users className="h-8 w-8 text-blue-200" />
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white border-0 shadow-lg">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-green-100 text-sm font-medium">Projetos Ativos</p>
-                    <p className="text-3xl font-bold">{recentServices.length}</p>
-                  </div>
-                  <Briefcase className="h-8 w-8 text-green-200" />
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white border-0 shadow-lg">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-purple-100 text-sm font-medium">Avaliação Média</p>
-                    <p className="text-3xl font-bold">4.8</p>
-                  </div>
-                  <Star className="h-8 w-8 text-purple-200" />
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white border-0 shadow-lg">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-orange-100 text-sm font-medium">Taxa de Sucesso</p>
-                    <p className="text-3xl font-bold">96%</p>
-                  </div>
-                  <TrendingUp className="h-8 w-8 text-orange-200" />
-                </div>
-              </CardContent>
-            </Card>
+          <div className="bg-white p-6 rounded-lg shadow-md mb-8 flex flex-col md:flex-row items-center gap-4">
+            <div className="relative flex-1 w-full">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Input
+                type="text"
+                placeholder="Buscar designers ou serviços..."
+                className="w-full pl-10 pr-4 py-2 border rounded-full focus:ring-2 focus:ring-orange-500"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+              <select
+                className="w-full sm:w-auto px-4 py-2 border rounded-full focus:ring-2 focus:ring-orange-500"
+                value={serviceFilter}
+                onChange={(e) => setServiceFilter(e.target.value)}
+              >
+                <option value="">Todos os Serviços</option>
+                {servicesList.map((service) => (
+                  <option key={service} value={service}>
+                    {service}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="w-full sm:w-auto px-4 py-2 border rounded-full focus:ring-2 focus:ring-orange-500"
+                value={locationFilter}
+                onChange={(e) => setLocationFilter(e.target.value)}
+              >
+                <option value="">Todas as Localizações</option>
+                {locations.map((loc) => (
+                  <option key={loc.value} value={loc.value}>
+                    {loc.label}
+                  </option>
+                ))}
+              </select>
+              <Button className="bg-orange-500 hover:bg-orange-600 text-white rounded-full px-6 py-2">
+                <Filter className="h-5 w-5 mr-2" /> Filtrar
+              </Button>
+            </div>
           </div>
 
-          {/* Seção de Serviços Recentes */}
-          {recentServices.length > 0 && (
-            <Card className="mb-8 shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-slate-800">
-                  <Zap className="h-5 w-5 text-orange-500" />
-                  Serviços Recentes
-                </CardTitle>
-                <CardDescription>
-                  Confira os últimos serviços adicionados pelos nossos prestadores
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {recentServices.map((service) => (
-                    <Card key={service.id_serviceFreelancer} className="border border-slate-200 hover:shadow-md transition-shadow">
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between mb-3">
-                          <Badge variant="secondary" className="bg-orange-100 text-orange-700">
-                            {getServiceCategory(service.title, service.description)}
-                          </Badge>
-                          <span className="text-sm text-slate-500">
-                            {formatDate(service.createdAt)}
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+            {/* Coluna da Esquerda: Últimos Serviços e Falar com Especialista */}
+            <div className="lg:col-span-1 flex flex-col space-y-8">
+              {/* Seção de Últimos Serviços Adicionados */}
+              {recentServices.length > 0 && (
+                <Card className="shadow-lg rounded-lg overflow-hidden bg-white border border-gray-200">
+                  <CardHeader className="bg-yellow-100 p-4 border-b border-yellow-200">
+                    <CardTitle className="text-xl font-bold text-yellow-800 flex items-center">
+                      <Zap className="h-6 w-6 text-yellow-600 mr-2" /> Serviços recentes
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-4 space-y-4">
+                    {recentServices.map((service) => (
+                      <div key={service.id_serviceFreelancer} className="border-b pb-4 last:border-b-0 last:pb-0">
+                        <h3 className="font-semibold text-gray-800 text-lg">{service.title}</h3>
+                        <p className="text-gray-600 text-sm line-clamp-2 mb-1">{service.description}</p>
+                        <div className="flex items-center justify-between text-sm text-gray-500 mb-2">
+                          <span className="font-bold text-green-600">{formatPrice(service.price)}</span>
+                          <span className="flex items-center">
+                            <Calendar className="h-3 w-3 mr-1" /> {formatDate(service.createdAt)}
                           </span>
                         </div>
-                        <h3 className="font-semibold text-slate-800 mb-2 line-clamp-2">
-                          {service.title}
-                        </h3>
-                        <p className="text-sm text-slate-600 mb-3 line-clamp-2">
-                          {service.description}
-                        </p>
-                        <div className="flex items-center justify-between">
-                          <span className="text-lg font-bold text-green-600">
-                            {formatPrice(service.price)}
-                          </span>
-                          <Button size="sm" variant="outline" className="text-orange-600 border-orange-200 hover:bg-orange-50">
-                            Ver Detalhes
+                        <div className="flex items-center justify-between text-xs text-gray-500">
+                          <Badge variant="secondary" className="bg-gray-200 text-gray-700">
+                            {getServiceCategory(service.title, service.description)}
+                          </Badge>
+                          <Link href={`/providers/${service.id_provider}`}>
+                            <Button variant="link" className="h-auto p-0 text-amber-500 hover:text-amber-600">
+                              <UserCheck className="h-3 w-3 mr-1" /> 
+                              Ver Perfil
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Seção Falar com Especialista */}
+              <Card className="p-6 shadow-lg rounded-lg bg-white border-100 border-gray-200">
+                <CardTitle className="text-2xl font-bold text-amber-700 mb-4 flex items-center">
+                  <MessageCircle className="h-7 w-7 mr-2" /> Solicite suporte 
+                </CardTitle>
+                <CardDescription className="text-black-600">
+                  Está precisando de suporte 24 horas para tirar alguma dúvida referente a plataforma? Clique no botão e fale com um especialista agora mesmo!
+                </CardDescription>
+                <Button className="w-full bg-amber-600 hover:bg-amber-700 text-white mt-4">
+                  Falar com especialista 
+                </Button>
+              </Card>
+            </div>
+
+            {/* Coluna da Direita: Prestadores em Destaque */}
+            <div className="lg:col-span-3">
+              <h2 className="text-2xl font-bold text-slate-800 mb-4 flex items-center">
+                <Users className="h-7 w-7 text-amber-500 mr-2" /> {list.length} profissionais encontrados 
+              </h2>
+              {showOnlyCurrentUser ? (
+                <Card className="w-full p-6 text-center shadow-lg rounded-lg bg-yellow-50 border-yellow-200">
+                  <CardTitle className="text-xl font-semibold text-yellow-800 mb-2">
+                    Você é o único prestador encontrado com os filtros atuais!
+                  </CardTitle>
+                  <CardDescription className="text-yellow-700">
+                    Seu perfil está em destaque. Compartilhe para atrair mais clientes.
+                  </CardDescription>
+                  <Link href="/profile">
+                    <Button className="mt-4 bg-yellow-600 hover:bg-yellow-700 text-white">
+                      Ver Meu Perfil
+                    </Button>
+                  </Link>
+                </Card>
+              ) : list.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {list.map(({ provider, user }) => (
+                    <Card
+                      key={provider.provider_id}
+                      className="overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300 rounded-lg border border-gray-200"
+                    >
+                      {/* Banner do usuário */}
+                      <div className="relative">
+                        <UserBanner userId={user.id} className="h-20" />
+                        
+                        {/* Avatar posicionado metade no banner e metade no conteúdo */}
+                        <div className="absolute left-6 -bottom-10 z-10">
+                          <UserAvatar userId={user.id} size="lg" />
+                        </div>
+                      </div>
+                      
+                      <CardContent className="pt-12 pb-4 px-6">
+                        {/* Nome e profissão */}
+                        <div className="mb-3">
+                          <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                            {user.name}
+                          </h3>
+                          <p className="text-sm text-gray-600 mb-2">
+                            {provider.profession || "Profissão não informada"}
+                          </p>
+                        </div>
+
+                        {/* Estatísticas */}
+                        <div className="flex items-center gap-4 mb-4 text-sm text-gray-500">
+                          <div className="flex items-center gap-1">
+                            <Star className="w-4 h-4 text-yellow-500 fill-current" />
+                            <span>{provider.rating_mid}</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Users className="w-4 h-4" />
+                            <span>{provider.views_profile} views</span>
+                          </div>
+                        </div>
+
+                        {/* Localização */}
+                        <div className="flex items-center  text-gray-600 mb-4">
+                          <MapPin className="h-4 w-4 mr-1" /> {user.cidade_id ? `Cidade ID: ${user.cidade_id}` : "Em breve"}
+                        </div>
+
+                        {/* Botões de ação */}
+                        <div className="flex gap-2">
+                          <Link href={`/providers/${provider.user_id}`} className="flex-1">
+                            <Button className="w-full bg-orange-500 hover:bg-orange-600 text-white">
+                              Ver Perfil
+                            </Button>
+                          </Link>
+                          <Button
+                            variant="outline"
+                            className="flex-none p-2 border-orange-500 text-orange-600 hover:bg-orange-50"
+                            onClick={() => handleStartConversation(user.id)}
+                          >
+                            <MessageCircle className="h-5 w-5" />
                           </Button>
                         </div>
                       </CardContent>
                     </Card>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Lista de Prestadores */}
-          <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-slate-800">
-                <Shield className="h-5 w-5 text-orange-500" />
-                Prestadores Verificados
-              </CardTitle>
-              <CardDescription>
-                Conecte-se com profissionais qualificados para seus projetos
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {/* NOVA LÓGICA: Mostrar mensagem quando só há o usuário logado */}
-              {showOnlyCurrentUser ? (
-                <div className="text-center py-12 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
-                  <UserCheck className="h-16 w-16 text-blue-500 mx-auto mb-4" />
-                  <h3 className="text-xl font-semibold text-blue-700 mb-2">
-                    Você é o único prestador cadastrado!
-                  </h3>
-                  <p className="text-blue-600 mb-6 max-w-md mx-auto">
-                    Parabéns por fazer parte da nossa plataforma! Enquanto aguardamos mais prestadores se cadastrarem, 
-                    que tal completar seu perfil para atrair mais clientes?
-                  </p>
-                  <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                    <Button 
-                      onClick={() => setLocation("/profile")}
-                      className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold px-6 py-2 rounded-xl shadow-lg transition-all duration-300 hover:scale-105"
-                    >
-                      <Settings className="h-4 w-4 mr-2" />
-                      Editar Meu Perfil
-                    </Button>
-                    <Button 
-                      onClick={() => setLocation("/home")}
-                      variant="outline"
-                      className="border-blue-300 text-blue-600 hover:bg-blue-50 font-semibold px-6 py-2 rounded-xl transition-all duration-300 hover:scale-105"
-                    >
-                      <Home className="h-4 w-4 mr-2" />
-                      Voltar ao Início
-                    </Button>
-                  </div>
-                </div>
-              ) : list.length === 0 ? (
-                <div className="text-center py-12">
-                  <AlertCircle className="h-16 w-16 text-slate-400 mx-auto mb-4" />
-                  <h3 className="text-xl font-semibold text-slate-600 mb-2">
-                    Nenhum prestador encontrado
-                  </h3>
-                  <p className="text-slate-500">
-                    Tente ajustar os filtros de busca para encontrar mais prestadores.
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {list.map(({ provider, user }) => (
-                    <motion.div
-                      key={provider.provider_id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.5 }}
-                    >
-                      <Card className="h-full border border-slate-200 hover:shadow-xl transition-all duration-300 hover:scale-105 bg-white">
-                        <CardContent className="p-6">
-                          <div className="flex items-center gap-4 mb-4">
-                            <Avatar className="h-16 w-16 border-2 border-orange-200">
-                              <AvatarFallback className="bg-gradient-to-br from-orange-400 to-amber-500 text-white font-bold text-lg">
-                                {user.name
-                                  .split(" ")
-                                  .map((n) => n[0])
-                                  .join("")
-                                  .slice(0, 2)
-                                  .toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="flex-1">
-                              <h3 className="font-bold text-lg text-slate-800 mb-1">
-                                {user.name}
-                              </h3>
-                              <p className="text-orange-600 font-medium mb-2">
-                                {provider.profession}
-                              </p>
-                              <div className="flex items-center gap-4 text-sm text-slate-600">
-                                <div className="flex items-center gap-1">
-                                  <Star className="h-4 w-4 text-yellow-500 fill-current" />
-                                  <span className="font-medium">
-                                    {provider.rating_mid || "4.5"}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <span>{provider.views_profile} visualizações</span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {provider.about && (
-                            <p className="text-slate-600 text-sm mb-4 line-clamp-3">
-                              {provider.about}
-                            </p>
-                          )}
-
-                          <div className="flex items-center gap-2 mb-4">
-                            <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
-                              <CheckCircle className="h-3 w-3 mr-1" />
-                              Verificado
-                            </Badge>
-                            <Badge variant="outline" className="border-orange-200 text-orange-700">
-                              <Award className="h-3 w-3 mr-1" />
-                              Pro
-                            </Badge>
-                          </div>
-
-                          <div className="flex gap-2">
-                            <Link href={`/providers/${provider.provider_id}`} className="flex-1">
-                              <Button 
-                                variant="outline" 
-                                className="w-full border-slate-200 hover:bg-slate-50 text-slate-700"
-                              >
-                                <User className="h-4 w-4 mr-2" />
-                                Ver Perfil
-                              </Button>
-                            </Link>
-                            <Button 
-                              onClick={() => handleStartConversation(user.id)}
-                              className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold shadow-lg"
-                            >
-                              <MessageCircle className="h-4 w-4 mr-2" />
-                              Contatar
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </motion.div>
-                  ))}
+              ) : ( 
+                <div className="text-center py-8">
+                  <AlertCircle className="mx-auto h-12 w-12 text-gray-400" />
+                  <p className="mt-2 text-gray-500">Nenhum prestador encontrado com os filtros atuais.</p>
+                  <p className="text-sm text-gray-400">Tente ajustar sua busca ou filtros.</p>
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
+
+          {/* Seção de Gerenciamento de Demandas (apenas para contratantes) */}
+          {currentUser?.type === "contratante" && (
+            <div className="mt-8">
+              <h2 className="text-3xl font-bold text-slate-800 mb-6 flex items-center">
+                <TrendingUp className="h-8 w-8 text-blue-500 mr-3" /> Minhas Demandas
+              </h2>
+              {/* <DemandsManager /> */}
+              <Card className="p-6 shadow-lg rounded-lg">
+                <p className="text-gray-700">Aqui viria o componente DemandsManager.</p>
+              </Card>
+            </div>
+          )}
+
+          {/* Seção de Segurança e Privacidade */}
+          <div className="mt-8">
+            <h2 className="text-3xl font-bold text-slate-800 mb-6 flex items-center">
+              <Shield className="h-8 w-8 text-green-500 mr-3" /> Segurança e Privacidade
+            </h2>
+            <Card className="p-6 shadow-lg rounded-lg">
+              <p className="text-gray-700">
+                Sua segurança é nossa prioridade. Utilizamos as mais recentes tecnologias de criptografia
+                e proteção de dados para garantir que suas informações estejam sempre seguras.
+              </p>
+              <ul className="list-disc list-inside text-gray-600 mt-4 space-y-2">
+                <li>Verificação de perfil para todos os prestadores.</li>
+                <li>Transações financeiras seguras e protegidas.</li>
+                <li>Suporte ao cliente dedicado para qualquer problema.</li>
+              </ul>
+            </Card>
+          </div>
         </div>
       </div>
     </ApplicationLayout>

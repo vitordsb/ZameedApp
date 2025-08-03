@@ -36,7 +36,6 @@ import {
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 
-// Interfaces baseadas na estrutura real da API
 interface ServiceProvider {
   provider_id: number;
   user_id: number;
@@ -50,7 +49,7 @@ interface ServiceFreelancer {
   id_provider: number;
   title: string;
   description: string;
-  price: string; // A API retorna como string
+  price: string; 
   createdAt: string;
   updatedAt: string;
   ServiceProvider: ServiceProvider;

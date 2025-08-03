@@ -1,6 +1,4 @@
 
-
-
 // src/pages/Profile.tsx
 import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";

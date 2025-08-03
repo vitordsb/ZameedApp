@@ -172,7 +172,6 @@ const UserBanner = ({ userId, className = '' }) => {
     <div className={`${className}`} style={bannerStyle}>
       {(error || !imageUrl) && (
         <div className="text-gray-600 text-xs">
-          teste de debug 
         </div>
       )}
     </div>
@@ -625,7 +624,7 @@ export default function SocialFeed() {
                 transition={{ duration: 0.8 }}
                 className="text-5xl md:text-6xl font-bold mb-4"
               >
-                ZameedApp a melhor plataforma para freelancers de arquitetura
+                ArqDoor a melhor plataforma para freelancers de arquitetura
               </motion.h1>
               <motion.p 
                 key={`subtitle-${currentSlide}`}

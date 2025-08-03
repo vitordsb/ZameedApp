@@ -22,8 +22,8 @@ const Hero = () => {
       }}
     >
       <div className="container mx-auto px-4 text-center text-white">
-        <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6">Seja um Arquiteto de sucesso com a plataforma Zameed</h1>
-        <p className="text-xl md:text-2xl mb-8 max-w-3xl mx-auto">O melhor lugar para encontrar profissionais de design e arquitetura para os seus projetos.</p>
+        <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6">Sua casa dos sonhos com segurança e velocidade</h1>
+        <p className="text-xl md:text-2xl mb-8 max-w-3xl mx-auto">Encontre os melhores arquitetos e engenheiros para realizar os seus sonhos com o máximo de segurança</p>
         
         <div className="flex flex-col md:flex-row gap-4 justify-center">
           <Link href="/home">

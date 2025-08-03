@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
@@ -11,14 +10,12 @@ export interface Conversation {
   user2_id: number;
   created_at: string;
   updated_at: string;
-  // Dados do outro usuário na conversa
   otherUser: {
     id: number;
     name: string;
     email: string;
     type: "prestador" | "contratante";
   };
-  // Última mensagem da conversa
   lastMessage?: {
     id: number;
     content: string;

@@ -20,7 +20,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/use-auth";
 import { getInitials } from "@/lib/utils";
 import SearchBar from "@/components/SearchBar";
-import logo from "../../public/images/zameedlogo.jpg";
+import logo from "../../public/images/arqdoorlogo.jpg";
 
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -68,8 +68,8 @@ const Navbar = () => {
         {/* Logo */}
         <Link href="/">
           <div className="flex items-center gap-2">
-            <img src={logo} alt="Zameed Logo" className="h-8 w-auto" />
-            <span className={`text-lg font-bold ${textColor}`}>ZameedApp</span>
+            <img src={logo} alt="ArqDoor Logo" className="h-8 w-auto" />
+            <span className={`text-lg font-bold ${textColor}`}>ArqDoor</span>
           </div>
         </Link>
 

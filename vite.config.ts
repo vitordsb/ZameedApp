@@ -34,10 +34,4 @@ export default defineConfig({
     outDir: path.resolve(__dirname, "dist"),
     emptyOutDir: true,
   },
-  server: {
-    https: {
-      key: fs.readFileSync("./localhost-key.pem"),
-      cert: fs.readFileSync("./localhost.pem"),
-    },
-  }
-});
+ });

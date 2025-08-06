@@ -73,17 +73,15 @@ const Navbar = () => {
           </div>
         </Link>
 
-        {/* Center Search */}
-        {!isHomePage && (
-          <div className="hidden md:block w-full max-w-md mx-8">
+        <div className="hidden md:block w-full max-w-md mx-8">
+        {isLoggedIn && (
             <SearchBar 
               onSearch={(params) => console.log(params)} 
               placeholder="Buscar designers ou serviços..." 
               simpleNavbar 
             />
-          </div>
-        )}
-
+          )}
+        </div>
         <div className="hidden md:flex items-center space-x-6">
           <Link href="/home">
             <div className="flex items-center gap-1 text-sm text-gray-700 hover:text-amber-500">
@@ -100,6 +98,7 @@ const Navbar = () => {
               <Image className="w-4 h-4" /> Demandas  
             </div>
           </Link>
+
           {isLoggedIn && (
             <Link href="/messages">
               <div className="relative">
@@ -123,7 +122,6 @@ const Navbar = () => {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src={user.profileImage || undefined} alt={user.name} />
                     <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
                   </Avatar>
                 </Button>
@@ -152,7 +150,6 @@ const Navbar = () => {
           )}
         </div>
 
-        {/* Mobile Menu */}
         <div className="md:hidden">
           <Sheet>
             <SheetTrigger asChild>

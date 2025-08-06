@@ -37,11 +37,11 @@ export default function AuthPage() {
   }
   return (
     <div className="flex min-h-screen">
-    <Navbar/>
+      <Navbar/>
       <div className="w-full lg:w-1/2 p-8 flex flex-col justify-center items-center bg-white">
         <div className="w-full max-w-md space-y-8">
           <div className="text-center">
-            <h1 className="text-4xl font-bold mb-2">Bem vindo à ZameedApp!</h1>
+            <h1 className="text-4xl font-bold mb-2">Bem vindo ArqDoor!</h1>
             <p className="text-gray-600 mb-8">
               Por favor, faça login ou crie uma conta para continuar.
             </p>

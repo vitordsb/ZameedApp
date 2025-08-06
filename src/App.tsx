@@ -17,7 +17,7 @@ import LandingLayout from "@/components/layouts/LandingLayout";
 import ApplicationLayout from "@/components/layouts/ApplicationLayout";
 import ServicesFeed from "@/pages/ServicesFeed.tsx";
 import Profile from "@/pages/Profile";
-// Routes that should use the landing page layout
+
 const LANDING_ROUTES = ["/", "/auth"];
 
 function Router() {

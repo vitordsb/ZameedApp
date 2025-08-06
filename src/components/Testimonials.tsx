@@ -4,7 +4,7 @@ const Testimonials = () => {
       name: "Fernanda Lima",
       role: "Proprietária de imóvel",
       image: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?ixlib=rb-1.2.1&auto=format&fit=crop&w=100&q=80",
-      quote: "Contratar um arquiteto pelo ZameedApp foi muito mais fácil do que eu imaginava. Pude ver portfólios e conversar com profissionais antes de decidir. O projeto da minha casa ficou exatamente como sonhei!"
+      quote: "Contratar um arquiteto pelo ArqDoor foi muito mais fácil do que eu imaginava. Pude ver portfólios e conversar com profissionais antes de decidir. O projeto da minha casa ficou exatamente como sonhei!"
     },
     {
       name: "André Oliveira",
@@ -16,7 +16,7 @@ const Testimonials = () => {
       name: "Juliana Martins",
       role: "Empresária",
       image: "https://images.unsplash.com/photo-1580489944761-15a19d654956?ixlib=rb-1.2.1&auto=format&fit=crop&w=100&q=80",
-      quote: "Usei o ZameedApp para reformar o escritório da minha empresa. Achei uma arquiteta incrível, com preço justo e excelente atendimento. Recomendo para quem busca algo profissional e sem dor de cabeça."
+      quote: "Usei o ArqDoor para reformar o escritório da minha empresa. Achei uma arquiteta incrível, com preço justo e excelente atendimento. Recomendo para quem busca algo profissional e sem dor de cabeça."
     }
   ];
 

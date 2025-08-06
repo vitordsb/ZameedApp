@@ -7,7 +7,7 @@ const Footer = () => {
       <div className="container mx-auto px-4">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           <div>
-            <h3 className="text-xl font-bold mb-4">ZameedApp</h3>
+            <h3 className="text-xl font-bold mb-4">ArqDoor</h3>
             <p className="text-gray-300">Conectando clientes aos arquitetos e projetistas ideais para cada tipo de projeto.</p>
           </div>
 
@@ -43,7 +43,7 @@ const Footer = () => {
         </div>
 
         <div className="mt-12 pt-8 border-t border-gray-700 flex flex-col md:flex-row justify-between items-center">
-          <p className="text-gray-400 mb-4 md:mb-0">&copy; {new Date().getFullYear()} ZameedApp. Todos os direitos reservados.</p>
+          <p className="text-gray-400 mb-4 md:mb-0">&copy; {new Date().getFullYear()} ArqDoor. Todos os direitos reservados.</p>
           <div className="flex space-x-6">
             <a href="https://www.instagram.com/zameedapp" target="_blank" rel="noopener noreferrer" aria-label="Instagram" className="text-gray-400 hover:text-white transition-colors">
               <i className="fab fa-instagram text-xl" />

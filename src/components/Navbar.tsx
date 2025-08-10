@@ -82,23 +82,28 @@ const Navbar = () => {
             />
           )}
         </div>
+        
         <div className="hidden md:flex items-center space-x-6">
-          <Link href="/home">
-            <div className="flex items-center gap-1 text-sm text-gray-700 hover:text-amber-500">
-              <Home className="w-4 h-4" /> Início
-            </div>
-          </Link>
-          <Link href="/home/services">
-            <div className="flex items-center gap-1 text-sm text-gray-700 hover:text-amber-500">
-              <Newspaper className="w-4 h-4" /> Serviços 
-            </div>
-          </Link>
-          <Link href="/home/demands">
-            <div className="flex items-center gap-1 text-sm text-gray-700 hover:text-amber-500">
-              <Image className="w-4 h-4" /> Demandas  
-            </div>
-          </Link>
-
+          
+          {isLoggedIn && (
+            <>
+              <Link href="/home">
+                <div className="flex items-center gap-1 text-sm text-gray-700 hover:text-amber-500">
+                  <Home className="w-4 h-4" /> Início
+                </div>
+              </Link>
+              <Link href="/home/services">
+                <div className="flex items-center gap-1 text-sm text-gray-700 hover:text-amber-500">
+                  <Newspaper className="w-4 h-4" /> Serviços 
+                </div>
+              </Link>
+              <Link href="/home/demands">
+                <div className="flex items-center gap-1 text-sm text-gray-700 hover:text-amber-500">
+                  <Image className="w-4 h-4" /> Demandas  
+                </div>
+              </Link>
+            </>
+          )}
           {isLoggedIn && (
             <Link href="/messages">
               <div className="relative">
@@ -116,7 +121,6 @@ const Navbar = () => {
               </div>
             </Link>
           )}
-
           {isLoggedIn && user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -146,7 +150,9 @@ const Navbar = () => {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Button onClick={() => navigate("/auth")}>Login</Button>
+              <>
+                <Button onClick={() => navigate("/auth")}>Login</Button>
+              </>
           )}
         </div>
 

@@ -699,14 +699,12 @@ export default function Profile() {
     <AplicationLayout>
       <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-8">
-          {/* Header do perfil */}
-          <Card className="relative overflow-hidden shadow-2xl border-0 rounded-3xl">
-            <div className="absolute inset-0 bg-gradient-to-br from-orange-600 via-amber-600 to-yellow-500" />
-            <div className="absolute inset-0 bg-black/10" />
+          <Card className="relative overflow-hidden shadow-2xl  rounded-2xl">
+            <div className="absolute inset-0 bg-amber-600 " />
             
             <CardContent className="relative p-6 sm:p-8 lg:p-12 text-white">
               <div className="flex flex-col lg:flex-row items-center lg:items-start gap-6 lg:gap-8">
-                <Avatar className="w-32 h-32 sm:w-40 sm:h-40 border-4 border-white shadow-2xl">
+                <Avatar className="w-32 h-32 sm:w-40 sm:h-40">
                   <AvatarFallback className="bg-white/20 backdrop-blur-sm text-white text-4xl sm:text-5xl font-bold">
                     {user.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
                   </AvatarFallback>
@@ -738,17 +736,6 @@ export default function Profile() {
                       </>
                     )}
                   </div>
-
-                  <div className="flex flex-wrap justify-center lg:justify-start gap-2 sm:gap-3 pt-4">
-                    <Button
-                      onClick={logout}
-                      variant="outline"
-                      className="border-white text-amber-600 hover:bg-white hover:text-orange-600 font-semibold px-4 py-2 sm:px-6 sm:py-2 rounded-xl transition-all duration-300 hover:scale-105 text-sm sm:text-base"
-                    >
-                      <LogOut className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
-                      Sair
-                    </Button>
-                  </div>
                 </div>
               </div>
             </CardContent>
@@ -760,7 +747,7 @@ export default function Profile() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold text-slate-700">Completude do Perfil</h3>
-                  <span className="text-sm font-medium text-slate-600">{completionRate}%</span>
+                  <span className="text-sm font-medium text-slate-600">{completionRate}% completos</span>
                 </div>
                <Progress value={completionRate} className="w-[60%]" />
         </div>
@@ -1076,6 +1063,7 @@ export default function Profile() {
           <PortfolioModal 
             isOpen={isModalOpen}
             item={selectedPortfolioItem}
+            userName={user?.name || ""}
             imageUrl={getImageUrl(selectedPortfolioItem.image_id)}
             onClose={closePortfolioModal}
             onDelete={handleDeletePortfolioItem}

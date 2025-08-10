@@ -5,7 +5,7 @@ const Benefits = () => {
       <div className="container mx-auto px-4">
         <div className="flex flex-col md:flex-row items-center">
           <div className="md:w-1/2 mb-10 md:mb-0 md:pr-10">
-            <h2 className="text-3xl md:text-4xl font-bold mb-6">Por que usar o ZameedApp?</h2>
+            <h2 className="text-3xl md:text-4xl font-bold mb-6">Por que usar o ArqDoor?</h2>
             
             <div className="mb-6">
               <h3 className="text-xl font-bold flex items-center mb-2">

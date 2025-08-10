@@ -86,8 +86,8 @@ export function useMessaging(initialPartnerId?: string | null) {
       return data;
     },
     enabled: isLoggedIn && !!user,
-    staleTime: 10000, // 10 segundos
-    refetchInterval: 2000, // Refetch a cada 2 segundos 
+    staleTime: 5000, // 5 segundos
+    refetchInterval: 1000, // Refetch a cada 1 segundos 
   });
 
   // Buscar dados de usuários para as conversas

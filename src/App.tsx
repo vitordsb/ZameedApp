@@ -39,7 +39,7 @@ function Router() {
 }
 function AppContent() {
   const [location, navigate] = useLocation();
-  const { isLoggedIn, isInitialized } = useAuth(); // ✅ AGORA SIM!
+  const { isLoggedIn, isInitialized } = useAuth();
 
   const isPublic = LANDING_ROUTES.includes(location);
   const isLandingPage = isPublic;

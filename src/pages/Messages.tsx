@@ -13,7 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Send, Users, MessageCircle, ArrowLeft, FileText, CheckCircle, XCircle, Plus, Minus, Clock, DollarSign, Eye, List } from 'lucide-react';
+import { Send, Users, MessageCircle, ArrowLeft, FileText, CheckCircle, XCircle, Plus, Minus, Clock, DollarSign, Eye, List, Info } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import AplicationLayout from '@/components/layouts/ApplicationLayout';
@@ -59,18 +59,13 @@ export default function Messages() {
   const [selectedTicketSteps, setSelectedTicketSteps] = useState<any[]>([]);
   const [loadingSteps, setLoadingSteps] = useState(false);
   const [ticketStepsMap, setTicketStepsMap] = useState<Record<number, any[]>>({});
+  const canCreateProposal = () => {
+    return user?.type === 'prestador';
+  };
 
-  // Log para debug
   useEffect(() => {
-    console.log('=== MESSAGES COMPONENT DEBUG ===');
-    console.log('initialPartnerId:', initialPartnerId);
-    console.log('currentConversation:', currentConversation);
-    console.log('currentConversation?.id:', currentConversation?.id);
-    console.log('conversations:', conversations);
-    console.log('tickets:', tickets);
-  }, [initialPartnerId, currentConversation, conversations, tickets]);
+  }, [initialPartnerId, currentConversation, conversations, tickets, user]);
 
-  // Carregar steps para todos os tickets automaticamente
   useEffect(() => {
     const loadAllTicketSteps = async () => {
       if (tickets.length === 0) return;
@@ -97,7 +92,6 @@ export default function Messages() {
   const getLatestProposal = () => {
     if (tickets.length === 0) return null;
     
-    // Ordenar tickets por data de criação (mais recente primeiro)
     const sortedTickets = [...tickets].sort((a, b) => 
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
@@ -165,7 +159,7 @@ export default function Messages() {
     }
   };
 
-  // Funções para gerenciar propostas
+  // Funções para gerenciar propostas (apenas para prestadores)
   const addProposalStep = () => {
     setProposalSteps([...proposalSteps, { title: '', price: 0 }]);
   };
@@ -183,7 +177,7 @@ export default function Messages() {
   };
 
   const handleSendProposal = async () => {
-    if (!currentConversation || !user) return;
+    if (!currentConversation || !user || !canCreateProposal()) return;
 
     // Validar steps
     const validSteps = proposalSteps.filter(step => step.title.trim() && step.price > 0);
@@ -227,9 +221,6 @@ export default function Messages() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('=== FORM SUBMIT ===');
-    console.log('currentConversation no handleSendMessage:', currentConversation);
-    console.log('currentConversation.id no handleSendMessage:', currentConversation?.id);
     
     if (!currentConversation?.id) {
       console.error('ERRO: Tentativa de enviar mensagem sem conversa selecionada');
@@ -240,11 +231,7 @@ export default function Messages() {
   };
 
   const handleConversationClick = (conversation: any) => {
-    console.log('=== CLIQUE NA CONVERSA ===');
-    console.log('Conversa clicada:', conversation);
-    console.log('ID da conversa clicada:', conversation.id);
     
-    // CORREÇÃO: Garantir que o objeto conversation tenha a estrutura correta
     if (!conversation.id) {
       console.error('ERRO: Conversa sem ID válido');
       return;
@@ -252,9 +239,7 @@ export default function Messages() {
     
     selectConversation(conversation);
     
-    // Atualizar URL para refletir a conversa selecionada usando parâmetros da rota
     const newUrl = `/messages/${conversation.otherUser.id}`;
-    console.log('Atualizando URL para:', newUrl);
     setLocation(newUrl);
   };
 
@@ -334,7 +319,7 @@ export default function Messages() {
             <CardHeader className="pb-3 flex-shrink-0">
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
-                Contatos com propostas 
+                {canCreateProposal() ? 'Contatos com propostas' : 'Conversas'}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0 flex-1 overflow-hidden">
@@ -345,7 +330,10 @@ export default function Messages() {
                     <MessageCircle className="h-12 w-12 mx-auto mb-3 text-gray-300" />
                     <p>Nenhuma conversa ainda</p>
                     <p className="text-sm">
-                      Inicie uma conversa visitando o perfil de um prestador no menu principal
+                      {canCreateProposal() 
+                        ? 'Inicie uma conversa visitando o perfil de um cliente no menu principal'
+                        : 'Inicie uma conversa visitando o perfil de um prestador no menu principal'
+                      }
                     </p>
                   </div>
                 ) : (
@@ -457,13 +445,13 @@ export default function Messages() {
                 
                 <Separator />
 
-                {/* ÁREA DE PROPOSTA - ALTURA FIXA */}
+                {/* ÁREA DE PROPOSTA - EXIBIDA PARA TODOS OS USUÁRIOS QUANDO HÁ PROPOSTAS */}
                 {latestProposal && (
                   <div className="p-4 bg-gradient-to-r from-orange-50 to-amber-50 border-b flex-shrink-0">
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="font-medium text-gray-900 flex items-center gap-2">
                         <FileText className="h-4 w-4 text-orange-600" />
-                        Última Proposta
+                        {canCreateProposal() ? 'Última Proposta Enviada' : 'Proposta Recebida'}
                         {tickets.length > 1 && (
                           <Badge variant="secondary" className="text-xs ml-2">
                             {tickets.length} total
@@ -484,7 +472,8 @@ export default function Messages() {
                           </Button>
                         )}
                         
-                        {user?.type === 'prestador' && !hasActiveTicket() && (
+                        {/* BOTÃO NOVA PROPOSTA - APENAS PARA PRESTADORES */}
+                        {canCreateProposal() && !hasActiveTicket() && (
                           <Dialog open={showProposalModal} onOpenChange={setShowProposalModal}>
                             <DialogTrigger asChild>
                               <Button size="sm" className="bg-orange-600 hover:bg-orange-700">
@@ -567,10 +556,18 @@ export default function Messages() {
                             </DialogContent>
                           </Dialog>
                         )}
+
+                        {/* INFORMAÇÃO PARA CONTRATANTES */}
+                        {!canCreateProposal() && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600 bg-blue-50 px-3 py-1 rounded-lg">
+                            <Info className="h-4 w-4 text-blue-600" />
+                            <span>Apenas prestadores podem criar propostas</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                     
-                    {/* CARD DA ÚLTIMA PROPOSTA */}
+                    {/* CARD DA ÚLTIMA PROPOSTA - VISÍVEL PARA TODOS */}
                     <Card className={`${latestProposalStatusConfig.bgColor} ${latestProposalStatusConfig.borderColor} border-2`}>
                       <CardContent className="p-4">
                         <div className="flex items-start justify-between mb-3">
@@ -649,7 +646,10 @@ export default function Messages() {
                           <MessageCircle className="h-12 w-12 mx-auto mb-3 text-gray-300" />
                           <p className="text-lg font-medium mb-2">Nenhuma mensagem ainda</p>
                           <p className="text-sm">
-                            Inicie a conversa enviando uma mensagem ou criando uma proposta
+                            {canCreateProposal() 
+                              ? 'Inicie a conversa enviando uma mensagem ou criando uma proposta'
+                              : 'Inicie a conversa enviando uma mensagem'
+                            }
                           </p>
                         </div>
                       ) : (
@@ -721,11 +721,13 @@ export default function Messages() {
           </Card>
         </div>
 
-        {/* MODAL PARA VER TODAS AS PROPOSTAS */}
+        {/* MODAL PARA VER TODAS AS PROPOSTAS - DISPONÍVEL PARA TODOS */}
         <Dialog open={showAllProposals} onOpenChange={setShowAllProposals}>
           <DialogContent className="max-w-4xl max-h-[90vh]">
             <DialogHeader>
-              <DialogTitle>Todas as Propostas ({tickets.length})</DialogTitle>
+              <DialogTitle>
+                {canCreateProposal() ? 'Todas as Propostas Enviadas' : 'Todas as Propostas Recebidas'} ({tickets.length})
+              </DialogTitle>
             </DialogHeader>
             <ScrollArea className="max-h-[70vh] pr-4">
               <div className="space-y-4">
@@ -792,7 +794,6 @@ export default function Messages() {
           </DialogContent>
         </Dialog>
 
-        {/* MODAL DE DETALHES DA PROPOSTA */}
         <Dialog open={showProposalDetails} onOpenChange={setShowProposalDetails}>
           <DialogContent className="max-w-4xl max-h-[90vh] p-0">
             <DialogHeader className="p-6 pb-0">

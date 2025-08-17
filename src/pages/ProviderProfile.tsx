@@ -1,4 +1,5 @@
 
+
 // src/pages/ProviderProfile.tsx
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
@@ -418,15 +419,7 @@ export default function ProviderProfile() {
       >
         {/* HEADER HERO SECTION */}
         <Card className="relative overflow-hidden shadow-2xl border-0 rounded-3xl">
-          {/* Background com gradiente laranja */}
-          <div className="absolute inset-0 bg-gradient-to-br from-orange-600 via-amber-600 to-yellow-500" />
-          <div className="absolute inset-0 bg-black/10" />
-          
-          {/* Padrão decorativo */}
-          <div className="absolute inset-0 opacity-10">
-            <div className="absolute top-0 right-0 w-96 h-96 bg-white rounded-full -translate-y-48 translate-x-48"></div>
-            <div className="absolute bottom-0 left-0 w-64 h-64 bg-white rounded-full translate-y-32 -translate-x-32"></div>
-          </div>
+          <div className="absolute inset-0 bg-gradient-to-br from-amber-600 via-amber-600 to-amber-500" />
 
           <CardContent className="relative p-6 sm:p-8 lg:p-12 text-white">
             <div className="flex flex-col lg:flex-row items-center lg:items-start gap-6 lg:gap-8">
@@ -437,12 +430,12 @@ export default function ProviderProfile() {
                 transition={{ delay: 0.2, duration: 0.5 }}
                 className="relative flex-shrink-0"
               >
-                <Avatar className="w-32 h-32 sm:w-40 sm:h-40 border-4 border-white shadow-2xl">
+                <Avatar className="w-32 h-32 sm:w-40 sm:h-40 border-2 border-white shadow-2xl">
                   <AvatarFallback className="bg-white/20 backdrop-blur-sm text-white text-4xl sm:text-5xl font-bold">
                     {getInitials(user.name)}
                   </AvatarFallback>
                 </Avatar>
-                <div className="absolute -bottom-2 -right-2 w-10 h-10 sm:w-12 sm:h-12 bg-green-500 rounded-full border-4 border-white flex items-center justify-center">
+                <div className="absolute -bottom-2 -right-2 w-10 h-10 sm:w-12 sm:h-12 bg-green-500 rounded-full  flex items-center justify-center">
                   <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                 </div>
               </motion.div>
@@ -492,28 +485,6 @@ export default function ProviderProfile() {
                   transition={{ delay: 0.5, duration: 0.5 }}
                   className="flex flex-wrap justify-center lg:justify-start gap-2 sm:gap-3 pt-4"
                 >
-                  <Button
-                    onClick={() => setLocation(`/messages?userId=${user.id}`)}
-                    className="bg-white text-orange-600 hover:bg-white/90 font-semibold px-4 py-2 sm:px-6 sm:py-2 rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl text-sm sm:text-base"
-                  >
-                    <MessageCircle className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
-                    Enviar Mensagem
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="border-white text-white hover:bg-white hover:text-orange-600 font-semibold px-4 py-2 sm:px-6 sm:py-2 rounded-xl transition-all duration-300 hover:scale-105 text-sm sm:text-base"
-                  >
-                    <Heart className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
-                    Favoritar
-                  </Button>
-                  <Button
-                    onClick={refreshData}
-                    variant="outline"
-                    className="border-white text-white hover:bg-white hover:text-orange-600 font-semibold px-4 py-2 sm:px-6 sm:py-2 rounded-xl transition-all duration-300 hover:scale-105 text-sm sm:text-base"
-                  >
-                    <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
-                    Atualizar
-                  </Button>
                 </motion.div>
               </div>
             </div>
@@ -733,16 +704,6 @@ export default function ProviderProfile() {
                       {services.length}
                     </span>
                   </div>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-purple-500" />
-                      <span className="text-sm text-slate-600">Membro há</span>
-                    </div>
-                    <span className="font-semibold text-slate-800">
-                      {getSince(user.createdAt)}
-                    </span>
-                  </div>
                 </CardContent>
               </Card>
             </motion.div>
@@ -764,20 +725,13 @@ export default function ProviderProfile() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-3">
-                    <Button
-                      onClick={() => setLocation(`/messages?userId=${user.id}`)}
-                      className="w-full bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-semibold py-3 rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl"
-                    >
-                      <MessageCircle className="w-4 h-4 mr-2" />
-                      Enviar Mensagem
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full border-orange-300 text-orange-600 hover:bg-orange-50 font-semibold py-3 rounded-xl transition-all duration-300 hover:scale-105"
-                    >
-                      <Heart className="w-4 h-4 mr-2" />
-                      Adicionar aos Favoritos
-                    </Button>
+                      <Button
+                        onClick={() => setLocation(`/messages/${user.id}`)}
+                        className="flex-1 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-semibold py-3 px-6 rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl"
+                      >
+                        <MessageCircle className="h-5 w-5 mr-2" />
+                        Enviar Mensagem
+                      </Button>
                   </div>
                 </CardContent>
               </Card>

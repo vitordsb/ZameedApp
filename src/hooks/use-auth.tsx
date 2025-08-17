@@ -62,7 +62,7 @@ const registerSchema = z.object({
   password: z.string().min(6, "Senha muito curta"),
   cpf: z.string().min(11, "CPF inválido").optional(),
   cnpj: z.string().min(14).optional(),
-  gender: z.string(),
+  gender: z.string().optional(),
   birth: z.string(),
   type: z.enum(["contratante", "prestador"]),
   termos_aceitos: z.literal(true, { errorMap: () => ({ message: "É preciso aceitar os termos" }) }),
@@ -106,21 +106,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const registerUser = async (data: RegisterPayload) => {
+    if (data.password.length < 6) {
+      throw new Error("Senha muito curta, por favor preencha 6 digitos")
+    }
+    else if (data.termos_aceitos === false) {
+      throw new Error("É preciso aceitar os termos para se cadastrar")
+    }
     registerSchema.parse(data);
-    
     let userRegistrationPayload: any = { ...data };
-    // Remover campos específicos de prestador para o endpoint /users
     delete userRegistrationPayload.profession;
     delete userRegistrationPayload.about;
-    delete userRegistrationPayload.about;
-
-    // 1. Registrar o usuário no endpoint /users
-    console.log(`Registrando usuário no endpoint: /users`);
-    console.log("Dados enviados para /users:", userRegistrationPayload);
 
     const userRes = await apiRequest("POST", "/users", userRegistrationPayload);
     const userBody = await userRes.json();
-    console.log("Resposta da API (/users):", userBody);
 
     if (!userRes.ok) {
       throw new Error(userBody.message || "Erro ao cadastrar usuário");

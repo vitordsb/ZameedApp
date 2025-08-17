@@ -1,8 +1,9 @@
 
-import React, { useEffect } from 'react';
-import { useLocation } from 'wouter';
+import React, { useEffect, useState } from 'react';
+import { useLocation, useParams } from 'wouter';
 import { useMessaging } from '@/hooks/use-messaging';
 import { useAuth } from '@/hooks/use-auth';
+import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,34 +11,54 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { Send, Users, MessageCircle, ArrowLeft } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Send, Users, MessageCircle, ArrowLeft, FileText, CheckCircle, XCircle, Plus, Minus, Clock, DollarSign, Eye, List } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import AplicationLayout from '@/components/layouts/ApplicationLayout';
 
 export default function Messages() {
   const [location, setLocation] = useLocation();
+  const { userId } = useParams<{ userId?: string }>();
   const { user } = useAuth();
+  const { toast } = useToast();
   
-  // Extrair userId da URL se presente
-  const urlParams = new URLSearchParams(location.split('?')[1] || '');
-  const initialPartnerId = urlParams.get('userId');
+  // Usar userId da URL como initialPartnerId
+  const initialPartnerId = userId;
 
   const {
     conversations,
     currentConversation,
     messages,
     newMessage,
+    tickets,
     unreadMessageCount,
     loadingConversations,
     loadingMessages,
+    loadingTickets,
     sendingMessage,
     setNewMessage,
     sendMessage,
     selectConversation,
     conversationsError,
     messagesError,
+    createProposal,
+    getStepsForTicket,
+    hasActiveTicket,
   } = useMessaging(initialPartnerId);
+
+  // Estados para modal de proposta
+  const [showProposalModal, setShowProposalModal] = useState(false);
+  const [proposalSteps, setProposalSteps] = useState([{ title: '', price: 0 }]);
+  const [sendingProposal, setSendingProposal] = useState(false);
+  
+  // Estados para visualização de propostas
+  const [showProposalDetails, setShowProposalDetails] = useState(false);
+  const [showAllProposals, setShowAllProposals] = useState(false);
+  const [selectedTicketSteps, setSelectedTicketSteps] = useState<any[]>([]);
+  const [loadingSteps, setLoadingSteps] = useState(false);
+  const [ticketStepsMap, setTicketStepsMap] = useState<Record<number, any[]>>({});
 
   // Log para debug
   useEffect(() => {
@@ -46,7 +67,163 @@ export default function Messages() {
     console.log('currentConversation:', currentConversation);
     console.log('currentConversation?.id:', currentConversation?.id);
     console.log('conversations:', conversations);
-  }, [initialPartnerId, currentConversation, conversations]);
+    console.log('tickets:', tickets);
+  }, [initialPartnerId, currentConversation, conversations, tickets]);
+
+  // Carregar steps para todos os tickets automaticamente
+  useEffect(() => {
+    const loadAllTicketSteps = async () => {
+      if (tickets.length === 0) return;
+      
+      const stepsMap: Record<number, any[]> = {};
+      
+      for (const ticket of tickets) {
+        try {
+          const steps = await getStepsForTicket(ticket.id);
+          stepsMap[ticket.id] = steps;
+        } catch (error) {
+          console.error(`Erro ao carregar steps do ticket ${ticket.id}:`, error);
+          stepsMap[ticket.id] = [];
+        }
+      }
+      
+      setTicketStepsMap(stepsMap);
+    };
+
+    loadAllTicketSteps();
+  }, [tickets, getStepsForTicket]);
+
+  // FUNÇÃO PARA OBTER A ÚLTIMA PROPOSTA
+  const getLatestProposal = () => {
+    if (tickets.length === 0) return null;
+    
+    // Ordenar tickets por data de criação (mais recente primeiro)
+    const sortedTickets = [...tickets].sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+    
+    return sortedTickets[0];
+  };
+
+  // FUNÇÃO PARA CALCULAR TOTAL DE UMA PROPOSTA
+  const calculateProposalTotal = (steps: any[]) => {
+    return steps.reduce((sum, step) => sum + (step.price || 0), 0);
+  };
+
+  // FUNÇÃO PARA FORMATAR MOEDA
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(value);
+  };
+
+  // FUNÇÃO PARA OBTER STATUS CONFIG
+  const getStatusConfig = (status?: string) => {
+    switch (status?.toLowerCase()) {
+      case 'accepted':
+      case 'aceito':
+        return {
+          variant: 'default' as const,
+          icon: CheckCircle,
+          label: 'Aceito',
+          color: 'text-green-600',
+          bgColor: 'bg-green-50',
+          borderColor: 'border-green-200'
+        };
+      case 'rejected':
+      case 'rejeitado':
+        return {
+          variant: 'destructive' as const,
+          icon: XCircle,
+          label: 'Rejeitado',
+          color: 'text-red-600',
+          bgColor: 'bg-red-50',
+          borderColor: 'border-red-200'
+        };
+      case 'in_progress':
+      case 'em_andamento':
+        return {
+          variant: 'default' as const,
+          icon: Clock,
+          label: 'Em Andamento',
+          color: 'text-blue-600',
+          bgColor: 'bg-blue-50',
+          borderColor: 'border-blue-200'
+        };
+      case 'pending':
+      case 'pendente':
+      default:
+        return {
+          variant: 'outline' as const,
+          icon: Clock,
+          label: 'Pendente',
+          color: 'text-orange-600',
+          bgColor: 'bg-orange-50',
+          borderColor: 'border-orange-200'
+        };
+    }
+  };
+
+  // Funções para gerenciar propostas
+  const addProposalStep = () => {
+    setProposalSteps([...proposalSteps, { title: '', price: 0 }]);
+  };
+
+  const removeProposalStep = (index: number) => {
+    if (proposalSteps.length > 1) {
+      setProposalSteps(proposalSteps.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateProposalStep = (index: number, field: 'title' | 'price', value: string | number) => {
+    const updated = [...proposalSteps];
+    updated[index] = { ...updated[index], [field]: value };
+    setProposalSteps(updated);
+  };
+
+  const handleSendProposal = async () => {
+    if (!currentConversation || !user) return;
+
+    // Validar steps
+    const validSteps = proposalSteps.filter(step => step.title.trim() && step.price > 0);
+    if (validSteps.length === 0) {
+      toast({
+        title: 'Erro',
+        description: 'Adicione pelo menos uma etapa válida à proposta.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSendingProposal(true);
+    try {
+      const success = await createProposal(validSteps);
+      if (success) {
+        setShowProposalModal(false);
+        setProposalSteps([{ title: '', price: 0 }]);
+      }
+    } finally {
+      setSendingProposal(false);
+    }
+  };
+
+  const handleViewProposalDetails = async (ticketId: number) => {
+    setLoadingSteps(true);
+    try {
+      const steps = await getStepsForTicket(ticketId);
+      setSelectedTicketSteps(steps);
+      setShowProposalDetails(true);
+    } catch (error) {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível carregar os detalhes da proposta.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingSteps(false);
+    }
+  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,8 +252,8 @@ export default function Messages() {
     
     selectConversation(conversation);
     
-    // Atualizar URL para refletir a conversa selecionada
-    const newUrl = `/messages?userId=${conversation.otherUser.id}`;
+    // Atualizar URL para refletir a conversa selecionada usando parâmetros da rota
+    const newUrl = `/messages/${conversation.otherUser.id}`;
     console.log('Atualizando URL para:', newUrl);
     setLocation(newUrl);
   };
@@ -114,6 +291,12 @@ export default function Messages() {
       .slice(0, 2);
   };
 
+  // Obter a última proposta
+  const latestProposal = getLatestProposal();
+  const latestProposalSteps = latestProposal ? (ticketStepsMap[latestProposal.id] || []) : [];
+  const latestProposalTotal = calculateProposalTotal(latestProposalSteps);
+  const latestProposalStatusConfig = getStatusConfig(latestProposal?.status);
+
   if (loadingConversations) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -140,19 +323,23 @@ export default function Messages() {
 
   return (
     <AplicationLayout>
-    <div className="bg-gray-50">
-      <div className="max-w-8px px-10 py-10">
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[calc(100vh-200px)]">
-          <Card className="lg:col-span-1">
-            <CardHeader className="pb-3">
+      {/* CONTAINER PRINCIPAL COM ALTURA MÁXIMA DE 90VH */}
+      <div className="px-4 py-4 max-h-[90vh] overflow-hidden">
+        
+        {/* GRID COM ALTURA CALCULADA PARA PERMITIR SCROLL INTERNO */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[calc(90vh-2rem)]">
+          
+          {/* PAINEL DE CONVERSAS */}
+          <Card className="lg:col-span-1 flex flex-col overflow-hidden">
+            <CardHeader className="pb-3 flex-shrink-0">
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
-              Contatos com propostas 
+                Contatos com propostas 
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-0">
-              <ScrollArea className="h-[calc(100vh-300px)]">
+            <CardContent className="p-0 flex-1 overflow-hidden">
+              {/* SCROLLAREA COM ALTURA ESPECÍFICA PARA ATIVAR SCROLL */}
+              <ScrollArea className="h-[calc(90vh-8rem)]">
                 {conversations.length === 0 ? (
                   <div className="p-6 text-center text-gray-500">
                     <MessageCircle className="h-12 w-12 mx-auto mb-3 text-gray-300" />
@@ -183,7 +370,6 @@ export default function Messages() {
                                 {getInitials(conversation.otherUser.name)}
                               </AvatarFallback>
                             </Avatar>
-                            <div className="absolute -bottom-1 -right-1 h-3 w-3 bg-green-500 rounded-full border-2 border-white"></div>
                           </div>
                           
                           <div className="flex-1 min-w-0">
@@ -214,7 +400,7 @@ export default function Messages() {
                             </div>
                             
                             <p className="text-sm text-gray-500 truncate mt-1">
-                              {conversation.lastMessage?.content }
+                              {conversation.lastMessage?.content}
                             </p>
                           </div>
                         </div>
@@ -226,12 +412,12 @@ export default function Messages() {
             </CardContent>
           </Card>
 
-          {/* Área de Mensagens */}
-          <Card className="lg:col-span-2">
+          {/* PAINEL DE MENSAGENS */}
+          <Card className="lg:col-span-2 flex flex-col overflow-hidden">
             {currentConversation ? (
               <>
-                {/* Header da Conversa */}
-                <CardHeader className="pb-3">
+                {/* HEADER DA CONVERSA */}
+                <CardHeader className="pb-3 flex-shrink-0">
                   <div className="flex items-center gap-3">
                     <Avatar className="h-10 w-10">
                       <AvatarImage 
@@ -258,100 +444,423 @@ export default function Messages() {
                         </div>
                       </div>
                     </div>
+                    
+                    {/* Indicador de Proposta Ativa */}
+                    {hasActiveTicket() && (
+                      <Badge variant="outline" className="text-orange-600 border-orange-200">
+                        <FileText className="h-3 w-3 mr-1" />
+                        Proposta Ativa
+                      </Badge>
+                    )}
                   </div>
                 </CardHeader>
                 
                 <Separator />
 
-                {/* Mensagens */}
-                <CardContent className="p-0 flex flex-col h-[calc(100vh-250px)]">
-                  <ScrollArea className="flex-1 p-4">
-                    {loadingMessages ? (
-                      <div className="flex items-center justify-center h-32">
-                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
-                      </div>
-                    ) : messagesError ? (
-                      <div className="text-center text-red-600 p-4">
-                        Erro ao carregar mensagens
-                      </div>
-                    ) : messages.length === 0 ? (
-                      <div className="text-center text-gray-500 p-8">
-                        <MessageCircle className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                        <p>Nenhuma mensagem ainda</p>
-                        <p className="text-sm">Inicie a conversa enviando uma mensagem</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {messages.map((message) => (
-                          <div
-                            key={message.id}
-                            className={`flex ${
-                              message.sender_id === user?.id ? 'justify-end' : 'justify-start'
-                            }`}
+                {/* ÁREA DE PROPOSTA - ALTURA FIXA */}
+                {latestProposal && (
+                  <div className="p-4 bg-gradient-to-r from-orange-50 to-amber-50 border-b flex-shrink-0">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-orange-600" />
+                        Última Proposta
+                        {tickets.length > 1 && (
+                          <Badge variant="secondary" className="text-xs ml-2">
+                            {tickets.length} total
+                          </Badge>
+                        )}
+                      </h4>
+                      
+                      <div className="flex items-center gap-2">
+                        {tickets.length > 1 && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setShowAllProposals(true)}
+                            className="text-orange-600 border-orange-200 hover:bg-orange-50"
                           >
-                            <div
-                              className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                                message.sender_id === user?.id
-                                  ? 'bg-orange-500 text-white'
-                                  : 'bg-gray-100 text-gray-900'
-                              }`}
-                            >
-                              <p className="text-sm">{message.content}</p>
-                              <p
-                                className={`text-xs mt-1 ${
-                                  message.sender_id === user?.id
-                                    ? 'text-orange-200'
-                                    : 'text-gray-500'
-                                }`}
-                              >
-                                {formatMessageTime(message.created_at)}
-                              </p>
+                            <List className="h-3 w-3 mr-1" />
+                            Ver Mais Propostas
+                          </Button>
+                        )}
+                        
+                        {user?.type === 'prestador' && !hasActiveTicket() && (
+                          <Dialog open={showProposalModal} onOpenChange={setShowProposalModal}>
+                            <DialogTrigger asChild>
+                              <Button size="sm" className="bg-orange-600 hover:bg-orange-700">
+                                <Plus className="h-4 w-4 mr-1" />
+                                Nova Proposta
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-2xl max-h-[90vh]">
+                              <DialogHeader>
+                                <DialogTitle>Criar Nova Proposta</DialogTitle>
+                              </DialogHeader>
+                              <ScrollArea className="max-h-[70vh] pr-4">
+                                <div className="space-y-4">
+                                  <div className="space-y-3">
+                                    {proposalSteps.map((step, index) => (
+                                      <div key={index} className="flex gap-3 items-end">
+                                        <div className="flex-1">
+                                          <Label htmlFor={`step-title-${index}`}>Título da Etapa</Label>
+                                          <Input
+                                            id={`step-title-${index}`}
+                                            value={step.title}
+                                            onChange={(e) => updateProposalStep(index, 'title', e.target.value)}
+                                            placeholder="Ex: Análise inicial do projeto"
+                                          />
+                                        </div>
+                                        <div className="w-32">
+                                          <Label htmlFor={`step-price-${index}`}>Preço (R$)</Label>
+                                          <Input
+                                            id={`step-price-${index}`}
+                                            type="number"
+                                            value={step.price}
+                                            onChange={(e) => updateProposalStep(index, 'price', parseFloat(e.target.value) || 0)}
+                                            placeholder="0,00"
+                                          />
+                                        </div>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="icon"
+                                          onClick={() => removeProposalStep(index)}
+                                          disabled={proposalSteps.length === 1}
+                                        >
+                                          <Minus className="h-4 w-4" />
+                                        </Button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={addProposalStep}
+                                    className="w-full"
+                                  >
+                                    <Plus className="h-4 w-4 mr-2" />
+                                    Adicionar Etapa
+                                  </Button>
+
+                                  <div className="flex justify-between items-center pt-4 border-t">
+                                    <div className="text-lg font-semibold">
+                                      Total: R$ {calculateProposalTotal(proposalSteps).toFixed(2)}
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <Button
+                                        variant="outline"
+                                        onClick={() => setShowProposalModal(false)}
+                                      >
+                                        Cancelar
+                                      </Button>
+                                      <Button
+                                        onClick={handleSendProposal}
+                                        disabled={sendingProposal}
+                                      >
+                                        {sendingProposal ? 'Enviando...' : 'Enviar Proposta'}
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </ScrollArea>
+                            </DialogContent>
+                          </Dialog>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* CARD DA ÚLTIMA PROPOSTA */}
+                    <Card className={`${latestProposalStatusConfig.bgColor} ${latestProposalStatusConfig.borderColor} border-2`}>
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            <div className={`p-2 rounded-lg ${latestProposalStatusConfig.bgColor}`}>
+                              <FileText className={`h-4 w-4 ${latestProposalStatusConfig.color}`} />
+                            </div>
+                            <div>
+                              <h5 className="font-semibold text-gray-900">
+                                Proposta #{latestProposal.id}
+                              </h5>
+                              <div className="flex items-center gap-2 mt-1">
+                                <Badge variant={latestProposalStatusConfig.variant} className="text-xs">
+                                  <latestProposalStatusConfig.icon className="h-3 w-3 mr-1" />
+                                  {latestProposalStatusConfig.label}
+                                </Badge>
+                                <span className="text-xs text-gray-500">
+                                </span>
+                              </div>
                             </div>
                           </div>
-                        ))}
-                      </div>
-                    )}
+                          
+                          <div className="text-right">
+                            <div className="flex items-center gap-1 font-bold text-lg">
+                              <DollarSign className="h-4 w-4 text-green-600" />
+                              <span className="text-green-600">{formatCurrency(latestProposalTotal)}</span>
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {latestProposalSteps.length} etapa{latestProposalSteps.length !== 1 ? 's' : ''}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm text-gray-600 flex-1 min-w-0 mr-2">
+                            {latestProposalSteps.length > 0 ? (
+                              <span className="truncate">
+                                Primeira etapa: {latestProposalSteps[0]?.title}
+                                {latestProposalSteps.length > 1 && ` +${latestProposalSteps.length - 1} mais`}
+                              </span>
+                            ) : (
+                              <span>Carregando detalhes...</span>
+                            )}
+                          </div>
+                          
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleViewProposalDetails(latestProposal.id)}
+                            disabled={loadingSteps}
+                            className={`${latestProposalStatusConfig.color} hover:bg-white/50 flex-shrink-0`}
+                          >
+                            <Eye className="h-3 w-3 mr-1" />
+                            Ver Detalhes
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+
+                {/* ÁREA DE MENSAGENS COM SCROLL ESPECÍFICO */}
+                <div className="flex-1 overflow-hidden flex flex-col">
+                  <ScrollArea className={latestProposal ? "h-[calc(90vh-20rem)]" : "h-[calc(90vh-12rem)]"}>
+                    <div className="p-4">
+                      {loadingMessages ? (
+                        <div className="flex items-center justify-center h-32">
+                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
+                        </div>
+                      ) : messagesError ? (
+                        <div className="text-center text-red-600 p-4">
+                          Erro ao carregar mensagens
+                        </div>
+                      ) : messages.length === 0 ? (
+                        <div className="text-center text-gray-500 p-8">
+                          <MessageCircle className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                          <p className="text-lg font-medium mb-2">Nenhuma mensagem ainda</p>
+                          <p className="text-sm">
+                            Inicie a conversa enviando uma mensagem ou criando uma proposta
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {messages.map((message) => (
+                            <div
+                              key={message.id}
+                              className={`flex ${
+                                message.sender_id === user?.id ? 'justify-end' : 'justify-start'
+                              }`}
+                            >
+                              <div
+                                className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                                  message.sender_id === user?.id
+                                    ? 'bg-orange-500 text-white'
+                                    : 'bg-gray-200 text-gray-900'
+                                }`}
+                              >
+                                <p className="text-sm">{message.content}</p>
+                                <p
+                                  className={`text-xs mt-1 ${
+                                    message.sender_id === user?.id
+                                      ? 'text-orange-100'
+                                      : 'text-gray-500'
+                                  }`}
+                                >
+                                  {formatMessageTime(message.created_at)}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </ScrollArea>
 
-                  {/* Input de Mensagem */}
-                  <div className="p-4 border-t">
+                  {/* INPUT DE MENSAGEM */}
+                  <div className="p-4 border-t bg-white flex-shrink-0">
                     <form onSubmit={handleSendMessage} className="flex gap-2">
                       <Input
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
                         placeholder="Digite sua mensagem..."
-                        className="flex-1"
                         disabled={sendingMessage}
+                        className="flex-1"
                       />
-                      <Button 
-                        type="submit" 
-                        disabled={!newMessage.trim() || sendingMessage || !currentConversation?.id}
-                        className="bg-orange-500 hover:bg-orange-600"
+                      <Button
+                        type="submit"
+                        disabled={sendingMessage || !newMessage.trim()}
+                        size="icon"
                       >
-                        {sendingMessage ? (
-                          <div className="animate-spin rounded-full h-2 w-4 border-b-2 border-white"></div>
-                        ) : (
-                          <Send className="h-4 w-4" />
-                        )}
+                        <Send className="h-4 w-4" />
                       </Button>
                     </form>
-                    
                   </div>
-                </CardContent>
+                </div>
               </>
             ) : (
-              <CardContent className="flex items-center justify-center h-full">
+              <div className="flex items-center justify-center h-full">
                 <div className="text-center text-gray-500">
                   <MessageCircle className="h-16 w-16 mx-auto mb-4 text-gray-300" />
-                  <h3 className="text-lg font-medium mb-2">Nenhuma mensagem ainda</h3>
-                  <p>Inicie a conversa enviando uma mensagem</p>
+                  <h3 className="text-lg font-medium mb-2">Selecione uma conversa</h3>
+                  <p className="text-sm">
+                    Escolha uma conversa da lista para começar a trocar mensagens
+                  </p>
                 </div>
-              </CardContent>
+              </div>
             )}
           </Card>
         </div>
+
+        {/* MODAL PARA VER TODAS AS PROPOSTAS */}
+        <Dialog open={showAllProposals} onOpenChange={setShowAllProposals}>
+          <DialogContent className="max-w-4xl max-h-[90vh]">
+            <DialogHeader>
+              <DialogTitle>Todas as Propostas ({tickets.length})</DialogTitle>
+            </DialogHeader>
+            <ScrollArea className="max-h-[70vh] pr-4">
+              <div className="space-y-4">
+                {tickets.map((ticket) => {
+                  const steps = ticketStepsMap[ticket.id] || [];
+                  const total = calculateProposalTotal(steps);
+                  const statusConfig = getStatusConfig(ticket.status);
+                  const StatusIcon = statusConfig.icon;
+
+                  return (
+                    <Card key={ticket.id} className={`${statusConfig.bgColor} ${statusConfig.borderColor} border-2`}>
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className={`p-2 rounded-lg ${statusConfig.bgColor}`}>
+                              <FileText className={`h-4 w-4 ${statusConfig.color}`} />
+                            </div>
+                            <div>
+                              <h5 className="font-semibold text-gray-900">
+                                Proposta #{ticket.id}
+                              </h5>
+                              <div className="flex items-center gap-2 mt-1">
+                                <Badge variant={statusConfig.variant} className="text-xs">
+                                  <StatusIcon className="h-3 w-3 mr-1" />
+                                  {statusConfig.label}
+                                </Badge>
+                                <span className="text-xs text-gray-500">
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-3">
+                            <div className="text-right">
+                              <div className="flex items-center gap-1 font-bold text-lg">
+                                <DollarSign className="h-4 w-4 text-green-600" />
+                                <span className="text-green-600">{formatCurrency(total)}</span>
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {steps.length} etapa{steps.length !== 1 ? 's' : ''}
+                              </div>
+                            </div>
+                            
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setShowAllProposals(false);
+                                handleViewProposalDetails(ticket.id);
+                              }}
+                              className={`${statusConfig.color} hover:bg-white/50`}
+                            >
+                              <Eye className="h-3 w-3 mr-1" />
+                              Ver Detalhes
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+          </DialogContent>
+        </Dialog>
+
+        {/* MODAL DE DETALHES DA PROPOSTA */}
+        <Dialog open={showProposalDetails} onOpenChange={setShowProposalDetails}>
+          <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+            <DialogHeader className="p-6 pb-0">
+              <DialogTitle className="text-2xl font-bold text-gray-900">
+                Detalhes da Proposta
+              </DialogTitle>
+            </DialogHeader>
+            <Separator />
+            <ScrollArea className="flex-1 p-6">
+              {loadingSteps ? (
+                <div className="flex items-center justify-center h-32">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
+                  <span className="ml-3 text-gray-600">Carregando detalhes...</span>
+                </div>
+              ) : selectedTicketSteps.length === 0 ? (
+                <div className="text-center py-12">
+                  <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    Nenhuma etapa encontrada
+                  </h3>
+                  <p className="text-gray-500">
+                    Esta proposta ainda não possui etapas definidas.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      Etapas do Projeto ({selectedTicketSteps.length})
+                    </h3>
+                    <div className="text-2xl font-bold text-green-600">
+                      {formatCurrency(calculateProposalTotal(selectedTicketSteps))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    {selectedTicketSteps.map((step, index) => (
+                      <Card key={step.id} className="bg-white border border-gray-200">
+                        <CardContent className="p-4">
+                          <div className="flex items-start gap-4">
+                            <div className="w-8 h-8 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center font-semibold">
+                              {index + 1}
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-gray-900 mb-1">
+                                {step.title}
+                              </h4>
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm text-gray-600">
+                                  Etapa {index + 1} de {selectedTicketSteps.length}
+                                </span>
+                                <div className="flex items-center gap-1 font-bold text-lg">
+                                  <DollarSign className="h-4 w-4 text-green-600" />
+                                  <span className="text-green-600">{formatCurrency(step.price)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </ScrollArea>
+          </DialogContent>
+        </Dialog>
       </div>
-    </div>
     </AplicationLayout>
   );
 }

@@ -1,4 +1,5 @@
 
+
 // src/pages/SocialFeed.tsx
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueries } from "@tanstack/react-query";
@@ -179,7 +180,7 @@ const UserBanner = ({ userId, className = '' }) => {
 };
 
 // Componente Avatar do usuário para o perfil
-const UserAvatar = ({ userId, className = '', size = 'md' }) => {
+const UserAvatar = ({ userId, className = '', size = 'md' }: { userId: number; className?: string; size?: 'sm' | 'md' | 'lg' }) => {
   const [imageUrl, setImageUrl] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -299,22 +300,20 @@ export default function SocialFeed() {
   const [locationFilter, setLocationFilter] = useState("");
   const [serviceFilter, setServiceFilter] = useState("");
   const [currentSlide, setCurrentSlide] = useState(0);
-  const { user: currentUser } = useAuth();
+  const { user, isLoggedIn, user: currentUser } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  // CORREÇÃO: Usar o hook useMessaging para acessar startConversationAndNavigate
   const { startConversationAndNavigate } = useMessaging();
 
   // Carrossel automático
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % carouselImages.length);
-    }, 5000);
+    }, 3000);
     return () => clearInterval(timer);
   }, []);
 
-  // CORREÇÃO: Função para iniciar conversa usando o hook
   const handleStartConversation = async (targetUserId: number) => {
     if (!currentUser) {
       toast({
@@ -327,11 +326,7 @@ export default function SocialFeed() {
 
     try {
       console.log("Iniciando conversa com usuário:", targetUserId);
-      await startConversationAndNavigate(targetUserId, setLocation);
-      toast({
-        title: "Conversa iniciada",
-        description: "Redirecionando para suas mensagens...",
-      });
+      setLocation(`/messages/${targetUserId}`);
     } catch (error) {
       console.error("Erro ao iniciar conversa:", error);
       toast({
@@ -439,6 +434,18 @@ export default function SocialFeed() {
         }),
     [combined, search, serviceFilter]
   );
+  // Filtra apenas contratantes
+  const allClients = useMemo(
+    () =>
+      combined
+        .filter(({ user }) => user.type === "contratante")
+        .filter(({ user }) => {
+          const matchSearch = user.name.toLowerCase().includes(search.toLowerCase());
+          return matchSearch;
+        }),
+    [combined, search]
+  ) 
+
 
   // NOVA LÓGICA: Separar lista para exibição e detectar se só tem o usuário logado
   const { list, showOnlyCurrentUser } = useMemo(() => {
@@ -458,7 +465,8 @@ export default function SocialFeed() {
     if (otherProviders.length > 0) {
       return { 
         list: otherProviders, 
-        showOnlyCurrentUser: false 
+        showOnlyCurrentUser: false,
+        currentUserProvider
       };
     }
 
@@ -466,7 +474,7 @@ export default function SocialFeed() {
     if (currentUserProvider) {
       return { 
         list: [], 
-        showOnlyCurrentUser: true,
+        showOnlyCurrentUser: false,
         currentUserProvider 
       };
     }
@@ -474,7 +482,7 @@ export default function SocialFeed() {
     // Se não há nenhum prestador
     return { 
       list: [], 
-      showOnlyCurrentUser: false 
+      showOnlyCurrentUser:true 
     };
   }, [allProviders, currentUser]);
 
@@ -824,7 +832,7 @@ export default function SocialFeed() {
 
                         {/* Botões de ação */}
                         <div className="flex gap-2">
-                          <Link href={`/providers/${provider.user_id}`} className="flex-1">
+                          <Link href={`/providers/${provider.provider_id}`} className="flex-1">
                             <Button className="w-full bg-orange-500 hover:bg-orange-600 text-white">
                               Ver Perfil
                             </Button>
@@ -886,5 +894,6 @@ export default function SocialFeed() {
     </ApplicationLayout>
   );
 }
+
 
 

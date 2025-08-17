@@ -63,14 +63,6 @@ export default function AuthPage() {
             >
             Criar conta
             </Button>
-            <div className="text-center mt-4">
-              <Button 
-                variant="link" 
-                onClick={handleGuest}
-              >
-             Quero apenas experimentar!
-              </Button>
-            </div>
           </div>
         </div>
       </div>

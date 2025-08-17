@@ -106,7 +106,7 @@ interface AddressData {
 }
 
 export default function Profile() {
-  const { user, logout } = useAuth();
+  const { user} = useAuth();
   const { toast } = useToast();
 
   // Estado dos campos de edição do perfil
@@ -134,12 +134,6 @@ export default function Profile() {
   const [services, setServices] = useState<Service[]>([]);
   const [loadingServices, setLoadingServices] = useState(false);
   const [errorServices, setErrorServices] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [draftSvc, setDraftSvc] = useState<{
-    title: string;
-    description: string;
-    price: string;
-  }>({ title: "", description: "", price: "" });
 
   // Estados para criação de novo serviço
   const [isCreating, setIsCreating] = useState(false);
@@ -160,19 +154,7 @@ export default function Profile() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   
   // Estados para o processo de upload em duas etapas
-  const [isUploadingImage, setIsUploadingImage] = useState(false);
-  const [uploadingImage, setUploadingImage] = useState(false);
-  const [uploadedImageId, setUploadedImageId] = useState<number | null>(null);
-  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   
-  // Estados para criação do item do portfólio (segunda etapa)
-  const [isCreatingPortfolioItem, setIsCreatingPortfolioItem] = useState(false);
-  const [creatingPortfolioItem, setCreatingPortfolioItem] = useState(false);
-  const [portfolioItemData, setPortfolioItemData] = useState<{
-    title: string;
-    description: string;
-  }>({ title: "", description: "" });
-
   // Estados para postagem de demanda
   const [newDemand, setNewDemand] = useState<{
     title: string;

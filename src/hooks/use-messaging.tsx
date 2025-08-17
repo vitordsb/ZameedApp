@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
@@ -8,6 +9,7 @@ export interface Conversation {
   id: number;
   user1_id: number;
   user2_id: number;
+  isNegotiation: boolean;
   created_at: string;
   updated_at: string;
   otherUser: {
@@ -21,10 +23,12 @@ export interface Conversation {
     content: string;
     created_at: string;
     sender_id: number;
+    type?: string;
   };
   unreadCount: number;
 }
 
+// INTERFACE MELHORADA PARA MENSAGENS COM SUPORTE A PROPOSTAS
 export interface Message {
   id: number;
   conversation_id: number;
@@ -32,6 +36,36 @@ export interface Message {
   content: string;
   created_at: string;
   updated_at: string;
+  type?: 'text' | 'proposal'; // Novo campo para tipo de mensagem
+  proposal_data?: {
+    ticket_id: number;
+    steps: Array<{
+      id: number;
+      title: string;
+      price: number;
+      status?: string;
+    }>;
+    total: number;
+    status?: string;
+  };
+}
+
+export interface Ticket {
+  id: number;
+  conversation_id: number;
+  created_at: string;
+  updated_at: string;
+  status?: string;
+}
+
+export interface Step {
+  id: number;
+  ticket_id: number;
+  title: string;
+  price: number;
+  created_at: string;
+  updated_at: string;
+  status?: string;
 }
 
 export interface CreateConversationRequest {
@@ -42,6 +76,18 @@ export interface CreateConversationRequest {
 export interface CreateMessageRequest {
   conversation_id: number;
   content: string;
+  type?: 'text' | 'proposal';
+  proposal_data?: any;
+}
+
+export interface CreateTicketRequest {
+  conversation_id: number;
+}
+
+export interface CreateStepRequest {
+  ticket_id: number;
+  title: string;
+  price: number;
 }
 
 export function useMessaging(initialPartnerId?: string | null) {
@@ -51,6 +97,9 @@ export function useMessaging(initialPartnerId?: string | null) {
   
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
   const [newMessage, setNewMessage] = useState('');
+  const [isInitializing, setIsInitializing] = useState(false);
+
+  console.log("🔄 useMessaging hook inicializado com initialPartnerId:", initialPartnerId);
 
   // Buscar todas as conversas do usuário
   const { 
@@ -66,28 +115,12 @@ export function useMessaging(initialPartnerId?: string | null) {
         throw new Error('Erro ao buscar conversas');
       }
       const data = await response.json();
-      console.log('=== DADOS BRUTOS DA API ===');
-      console.log('Resposta completa da API:', data);
-      console.log('Conversas recebidas:', data.conversations);
-      
-      if (data.conversations) {
-        data.conversations.forEach((conv: any, index: number) => {
-          console.log(`Conversa ${index}:`, conv);
-          console.log(`  - conversation_id: ${conv.conversation_id} (tipo: ${typeof conv.conversation_id})`);
-          console.log(`  - user1_id: ${conv.user1_id}`);
-          console.log(`  - user2_id: ${conv.user2_id}`);
-          
-          if (!conv.conversation_id || typeof conv.conversation_id !== 'number') {
-            console.error(`ERRO CRÍTICO: Conversa ${index} sem conversation_id válido!`, conv);
-          }
-        });
-      }
-      
+      console.log('📥 Conversas recebidas da API:', data.conversations);
       return data;
     },
     enabled: isLoggedIn && !!user,
-    staleTime: 4000, // 5 segundos
-    refetchInterval: 500, // Refetch a cada 1 segundos 
+    staleTime: 10000,
+    refetchInterval: 100000,
   });
 
   // Buscar dados de usuários para as conversas
@@ -98,7 +131,7 @@ export function useMessaging(initialPartnerId?: string | null) {
       return conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
     });
     
-    console.log('IDs de usuários para buscar:', ids);
+    console.log('👥 IDs de usuários para buscar:', ids);
     return ids;
   }, [conversationsData, user]);
 
@@ -108,20 +141,19 @@ export function useMessaging(initialPartnerId?: string | null) {
     queryFn: async () => {
       if (userIds.length === 0) return {};
       
-      console.log('Buscando dados dos usuários:', userIds);
+      console.log('🔍 Buscando dados dos usuários:', userIds);
       
       const userPromises = userIds.map(async (userId: number) => {
         try {
           const response = await apiRequest('GET', `/users/${userId}`);
           if (!response.ok) {
-            console.error(`Erro ao buscar usuário ${userId}: Status ${response.status}`);
+            console.error(`❌ Erro ao buscar usuário ${userId}: Status ${response.status}`);
             return { id: userId, data: null };
           }
           const data = await response.json();
-          console.log(`Dados do usuário ${userId}:`, data);
           return { id: userId, data: data.user };
         } catch (error) {
-          console.error(`Erro ao buscar usuário ${userId}:`, error);
+          console.error(`❌ Erro ao buscar usuário ${userId}:`, error);
           return { id: userId, data: null };
         }
       });
@@ -134,36 +166,28 @@ export function useMessaging(initialPartnerId?: string | null) {
           id,
           name: 'Usuário',
           email: '',
-          type: 'contratante'
+          type: 'contratante' as const
         };
       });
 
-      console.log('Mapa de usuários processado:', usersMap);
+      console.log('👥 Mapa de usuários processado:', usersMap);
       return usersMap;
     },
     enabled: userIds.length > 0,
-    staleTime: 5 * 60 * 1000, // 5 minutos
+    staleTime: 5 * 60 * 1000,
   });
 
   // Processar conversas com dados dos usuários
   const processedConversations: Conversation[] = useMemo(() => {
     if (!conversationsData?.conversations || !user || !usersData) {
-      console.log('Dados insuficientes para processar conversas:', {
-        hasConversations: !!conversationsData?.conversations,
-        hasUser: !!user,
-        hasUsersData: !!usersData
-      });
+      console.log('⏳ Dados insuficientes para processar conversas');
       return [];
     }
 
-    console.log('=== PROCESSANDO CONVERSAS ===');
-    console.log('Conversas brutas da API:', conversationsData.conversations);
+    console.log('🔄 Processando conversas...');
 
     const tempProcessed = conversationsData.conversations
       .map((conv: any) => {
-        console.log(`=== PROCESSANDO CONVERSA ${conv.conversation_id} ===`);
-        console.log('Conversa bruta:', conv);
-        
         const otherUserId = conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
         const otherUser = usersData[otherUserId];
 
@@ -171,6 +195,7 @@ export function useMessaging(initialPartnerId?: string | null) {
           id: conv.conversation_id, 
           user1_id: conv.user1_id,
           user2_id: conv.user2_id,
+          isNegotiation: true,
           created_at: conv.createdAt, 
           updated_at: conv.updatedAt, 
           otherUser: otherUser || {
@@ -182,23 +207,18 @@ export function useMessaging(initialPartnerId?: string | null) {
           unreadCount: 0 
         };
 
-        console.log(`Conversa ${conv.conversation_id} processada:`, processedConv);
-        console.log(`  - ID mapeado: ${processedConv.id} (tipo: ${typeof processedConv.id})`);
-        console.log(`  - otherUser: ${processedConv.otherUser.name} (ID: ${processedConv.otherUser.id})`);
-        
         if (!processedConv.id || typeof processedConv.id !== 'number') {
-          console.error('ERRO CRÍTICO: Conversa processada sem ID válido!', processedConv);
-          return null; // Retorna null para conversas inválidas
+          console.error('❌ Conversa processada sem ID válido!', processedConv);
+          return null;
         }
         
         return processedConv;
       })
-      .filter((conv: Conversation | null) => conv !== null) as Conversation[]; // Filtra os nulls
+      .filter((conv: Conversation | null) => conv !== null) as Conversation[];
 
-    console.log('=== CONVERSAS FINAIS PROCESSADAS ===');
-    console.log('Total de conversas:', tempProcessed.length);
+    console.log('✅ Conversas processadas:', tempProcessed.length);
     tempProcessed.forEach((conv, index) => {
-      console.log(`Conversa ${index}: ID=${conv.id}, otherUser=${conv.otherUser.name}`);
+      console.log(`  ${index}: ID=${conv.id}, otherUser=${conv.otherUser.name} (ID: ${conv.otherUser.id})`);
     });
     
     return tempProcessed;
@@ -207,25 +227,29 @@ export function useMessaging(initialPartnerId?: string | null) {
   // Mutation para criar nova conversa
   const createConversationMutation = useMutation({
     mutationFn: async (data: CreateConversationRequest) => {
-      console.log('Criando conversa com dados:', data);
+      console.log('🆕 Criando conversa com dados:', data);
       const response = await apiRequest('POST', '/conversation', data);
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Erro ao criar conversa:', errorText);
+        console.error('❌ Erro ao criar conversa:', errorText);
         throw new Error(`Erro ao criar conversa: ${response.status}`);
       }
       const result = await response.json();
-      console.log('Resposta da criação de conversa:', result);
+      console.log('✅ Conversa criada:', result);
       return result;
     },
     onSuccess: async (data, variables) => {
-      console.log('Conversa criada com sucesso:', data);
+      console.log('🎉 Conversa criada com sucesso, invalidando queries...');
       
       // Invalidar queries para atualizar a lista
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       queryClient.invalidateQueries({ queryKey: ['users'] });
       
-      await refetchConversations(); // Garante que a lista esteja atualizada
+      // Aguardar um pouco para garantir que os dados sejam atualizados
+      setTimeout(async () => {
+        await refetchConversations();
+        console.log('🔄 Queries invalidadas e refetch executado');
+      }, 500);
       
       toast({
         title: 'Conversa criada',
@@ -233,7 +257,7 @@ export function useMessaging(initialPartnerId?: string | null) {
       });
     },
     onError: (error) => {
-      console.error('Erro ao criar conversa:', error);
+      console.error('❌ Erro ao criar conversa:', error);
       toast({
         title: 'Erro',
         description: 'Não foi possível criar a conversa. Tente novamente.',
@@ -242,33 +266,33 @@ export function useMessaging(initialPartnerId?: string | null) {
     },
   });
 
-  // Mutation para enviar mensagem
+  // MUTATION MELHORADA PARA ENVIAR MENSAGENS COM SUPORTE A PROPOSTAS
   const sendMessageMutation = useMutation({
     mutationFn: async (data: CreateMessageRequest) => {
-      console.log('Enviando mensagem com dados:', data);
+      console.log('📤 Enviando mensagem:', data);
       
-      // Validação dos dados antes de enviar
       if (!data.conversation_id || !data.content?.trim()) {
         throw new Error('Dados inválidos para envio de mensagem');
       }
       
       const response = await apiRequest('POST', '/message', {
         conversation_id: data.conversation_id,
-        content: data.content.trim()
+        content: data.content.trim(),
+        type: data.type || 'text',
+        proposal_data: data.proposal_data
       });
       
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Erro ao enviar mensagem:', errorText);
+        console.error('❌ Erro ao enviar mensagem:', errorText);
         throw new Error(`Erro ao enviar mensagem: ${response.status}`);
       }
       
       const result = await response.json();
-      console.log('Mensagem enviada com sucesso:', result);
+      console.log('✅ Mensagem enviada:', result);
       return result;
     },
     onSuccess: (data) => {
-      console.log('Mensagem enviada com sucesso:', data);
       queryClient.invalidateQueries({ queryKey: ['messages', currentConversation?.id] });
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       setNewMessage('');
@@ -278,7 +302,7 @@ export function useMessaging(initialPartnerId?: string | null) {
       });
     },
     onError: (error) => {
-      console.error('Erro ao enviar mensagem:', error);
+      console.error('❌ Erro ao enviar mensagem:', error);
       toast({
         title: 'Erro',
         description: 'Não foi possível enviar a mensagem. Tente novamente.',
@@ -287,7 +311,7 @@ export function useMessaging(initialPartnerId?: string | null) {
     },
   });
 
-  // CORREÇÃO: Definir startConversation antes do useEffect
+  // Função para iniciar conversa
   const startConversation = useCallback(async (targetUserId: number) => {
     if (!user || !isLoggedIn) {
       toast({
@@ -298,9 +322,14 @@ export function useMessaging(initialPartnerId?: string | null) {
       return false;
     }
 
+    if (isInitializing) {
+      console.log('⏳ Já está inicializando uma conversa, aguardando...');
+      return false;
+    }
+
     try {
-      console.log('Iniciando conversa com usuário:', targetUserId);
-      console.log('Conversas disponíveis:', processedConversations);
+      setIsInitializing(true);
+      console.log('🚀 Iniciando conversa com usuário:', targetUserId);
       
       // Verificar se já existe uma conversa com este usuário
       const existingConversation = processedConversations.find(conv => 
@@ -308,25 +337,13 @@ export function useMessaging(initialPartnerId?: string | null) {
       );
 
       if (existingConversation) {
-        console.log('Conversa existente encontrada:', existingConversation);
-        console.log('ID da conversa existente:', existingConversation.id);
-        
-        if (!existingConversation.id || typeof existingConversation.id !== 'number') {
-          console.error('ERRO: Conversa existente sem ID válido!', existingConversation);
-          toast({
-            title: 'Erro',
-            description: 'Conversa inválida encontrada. Tente novamente.',
-            variant: 'destructive',
-          });
-          return false;
-        }
-        
+        console.log('✅ Conversa existente encontrada:', existingConversation);
         setCurrentConversation(existingConversation);
         return true;
       }
 
       // Criar nova conversa
-      console.log('Criando nova conversa com usuário:', targetUserId);
+      console.log('🆕 Criando nova conversa com usuário:', targetUserId);
       await createConversationMutation.mutateAsync({
         user1_id: user.id,
         user2_id: targetUserId,
@@ -334,80 +351,67 @@ export function useMessaging(initialPartnerId?: string | null) {
 
       return true;
     } catch (error) {
-      console.error('Erro ao iniciar conversa:', error);
+      console.error('❌ Erro ao iniciar conversa:', error);
       return false;
+    } finally {
+      setIsInitializing(false);
     }
-  }, [user, isLoggedIn, processedConversations, createConversationMutation, toast]);
+  }, [user, isLoggedIn, processedConversations, createConversationMutation, toast, isInitializing]);
 
-  // Função para iniciar uma nova conversa e navegar
+  // Função para iniciar conversa e navegar (simplificada)
   const startConversationAndNavigate = useCallback(async (targetUserId: number, setLocation: (path: string) => void) => {
-    const success = await startConversation(targetUserId);
-    if (success) {
-      setLocation(`/messages?userId=${targetUserId}`);
+    const conversation = await startConversation(targetUserId);
+    if (conversation) {
+      setLocation(`/messages/${targetUserId}`);
     }
-    return success;
   }, [startConversation]);
 
-  // CORREÇÃO: useEffect agora pode usar startConversation sem erro
   useEffect(() => {
-    console.log('=== ESTADO ATUAL DO HOOK ===');
-    console.log('currentConversation:', currentConversation);
-    console.log('currentConversation?.id:', currentConversation?.id);
-    console.log('conversations.length:', processedConversations.length);
-    console.log('loadingConversations:', loadingConversations);
-    console.log('loadingUsers:', loadingUsers);
+    if (loadingConversations || loadingUsers || isInitializing) {
+      console.log("⏳ Ainda carregando dados, aguardando...");
+      return;
+    }
 
-    if (!loadingConversations && !loadingUsers && processedConversations.length > 0 && !currentConversation) {
-      console.log('Tentando selecionar a conversa mais recente ou a inicial...');
-      if (initialPartnerId) {
-        const conversationFromUrl = processedConversations.find(conv => 
-          conv.otherUser.id === parseInt(initialPartnerId)
-        );
-        if (conversationFromUrl) {
-          console.log('Selecionando conversa da URL:', conversationFromUrl);
-          setCurrentConversation(conversationFromUrl);
-        } else {
-          console.log('Nenhuma conversa encontrada para o initialPartnerId. Tentando criar...');
-          startConversation(parseInt(initialPartnerId));
-        }
+    if (initialPartnerId) {
+      const targetId = parseInt(initialPartnerId);
+      console.log("🎯 Procurando conversa para targetId:", targetId);
+      
+      const targetConversation = processedConversations.find(conv => {
+        return conv.otherUser.id === targetId;
+      });
+
+      if (targetConversation) {
+        console.log("✅ Conversa encontrada para initialPartnerId:", targetConversation);
+        setCurrentConversation(targetConversation);
       } else {
-        // Seleciona a conversa mais recente se não houver initialPartnerId
-        const mostRecentConversation = processedConversations.sort((a, b) => 
-          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-        )[0];
-        if (mostRecentConversation) {
-          console.log('Selecionando a conversa mais recente:', mostRecentConversation);
-          setCurrentConversation(mostRecentConversation);
+        console.log("❌ Nenhuma conversa encontrada para initialPartnerId, tentando criar...");
+        if (!isInitializing) {
+          startConversation(targetId);
         }
+      }
+    } else if (!currentConversation && processedConversations.length > 0) {
+      const mostRecentConversation = processedConversations.sort((a, b) => 
+        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      )[0];
+      if (mostRecentConversation) {
+        console.log("📅 Selecionando conversa mais recente:", mostRecentConversation);
+        setCurrentConversation(mostRecentConversation);
       }
     }
 
-    // Se a lista de conversas mudar e a conversa atual não estiver mais nela, resetar
-    if (currentConversation && !processedConversations.some(conv => conv.id === currentConversation.id)) {
-      console.log('Conversa atual não encontrada na lista processada. Resetando currentConversation.');
-      setCurrentConversation(null);
-    }
+  }, [initialPartnerId, processedConversations, loadingConversations, loadingUsers, isInitializing, startConversation]);
 
-  }, [initialPartnerId, processedConversations, loadingConversations, loadingUsers, currentConversation, startConversation]);
-
-  // Efeito adicional para definir currentConversation após criação de conversa
   useEffect(() => {
-    if (!loadingConversations && !loadingUsers && processedConversations.length > 0 && !currentConversation && initialPartnerId) {
-      // Aguardar um pouco após o refetch para encontrar a conversa criada
-      const timer = setTimeout(() => {
-        const newConversation = processedConversations.find((conv) => 
-          conv.otherUser.id === parseInt(initialPartnerId)
-        );
-
-        if (newConversation) {
-          console.log('Conversa encontrada após criação:', newConversation);
-          setCurrentConversation(newConversation);
-        }
-      }, 1000);
-
-      return () => clearTimeout(timer);
+    if (initialPartnerId && !loadingConversations && !loadingUsers && processedConversations.length > 0) {
+      const targetId = parseInt(initialPartnerId);
+      const newConversation = processedConversations.find(conv => conv.otherUser.id === targetId);
+      
+      if (newConversation && (!currentConversation || currentConversation.id !== newConversation.id)) {
+        console.log("🆕 Nova conversa detectada após criação:", newConversation);
+        setCurrentConversation(newConversation);
+      }
     }
-  }, [processedConversations, loadingConversations, loadingUsers, currentConversation, initialPartnerId]);
+  }, [processedConversations, initialPartnerId, currentConversation, loadingConversations, loadingUsers]);
 
   // Buscar mensagens de uma conversa específica
   const { 
@@ -419,124 +423,283 @@ export function useMessaging(initialPartnerId?: string | null) {
     queryKey: ['messages', currentConversation?.id],
     queryFn: async () => {
       if (!currentConversation?.id) {
-        console.warn('Tentativa de buscar mensagens sem ID de conversa válido:', currentConversation);
+        console.warn('⚠️ Tentativa de buscar mensagens sem ID de conversa válido');
         return [];
       }
       
-      console.log(`Buscando mensagens para conversa ${currentConversation.id}`);
       const response = await apiRequest('GET', `/message/conversation/${currentConversation.id}`);
       if (!response.ok) {
         throw new Error(`Erro ao buscar mensagens: ${response.status}`);
       }
       const data = await response.json();
-      console.log(`Mensagens recebidas para conversa ${currentConversation.id}:`, data);
-      return data.messages || [];
+      console.log(`✅ Mensagens recebidas:`, data.messages?.length || 0);
+      
+      // Processar mensagens para identificar propostas
+      const processedMessages = (data.messages || []).map((msg: any) => {
+        // Se a mensagem contém dados de proposta, marcar como tipo 'proposal'
+        if (msg.content.includes('📋') && msg.content.includes('**') && msg.content.includes('Total:')) {
+          return {
+            ...msg,
+            type: 'proposal'
+          };
+        }
+        return {
+          ...msg,
+          type: 'text'
+        };
+      });
+      
+      return processedMessages;
     },
     enabled: !!currentConversation?.id && isLoggedIn && typeof currentConversation.id === 'number',
-    staleTime: 10000, // 10 segundos
-    refetchInterval: 15000, // Refetch a cada 15 segundos
+    staleTime: 10000,
+    refetchInterval: 15000,
   });
 
   // Função para selecionar uma conversa da lista
   const selectConversation = useCallback((conversation: Conversation) => {
-    console.log('=== SELECIONANDO CONVERSA ===');
-    console.log('Conversa a ser selecionada:', conversation);
+    console.log('🎯 Selecionando conversa:', conversation);
     if (!conversation || !conversation.id || typeof conversation.id !== 'number') {
-      console.error('ERRO: Tentativa de selecionar conversa sem ID válido!', conversation);
-      toast({
-        title: 'Erro',
-        description: 'Não foi possível selecionar a conversa. ID inválido.',
-        variant: 'destructive',
-      });
+      console.error('❌ Tentativa de selecionar conversa inválida:', conversation);
       return;
     }
     setCurrentConversation(conversation);
-    console.log('currentConversation definido como:', conversation);
-  }, [setCurrentConversation, toast]);
+  }, []);
 
   // Função para enviar mensagem
   const sendMessage = useCallback(async () => {
-    console.log('=== TENTANDO ENVIAR MENSAGEM ===');
-    console.log('currentConversation completo:', currentConversation);
-    console.log('currentConversation.id:', currentConversation?.id);
-    console.log('Tipo de currentConversation.id:', typeof currentConversation?.id);
-    console.log('newMessage:', newMessage);
-    console.log('user:', user);
-
-    if (!currentConversation) {
-      console.error('ERRO: currentConversation é null/undefined');
-      toast({
-        title: 'Erro',
-        description: 'Nenhuma conversa selecionada. Selecione uma conversa primeiro.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!currentConversation.id || typeof currentConversation.id !== 'number') {
-      console.error('ERRO: currentConversation.id é undefined/null ou não é um número');
-      console.error('Objeto currentConversation:', JSON.stringify(currentConversation, null, 2));
-      toast({
-        title: 'Erro',
-        description: 'ID da conversa não encontrado ou inválido. Tente selecionar a conversa novamente.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!newMessage.trim()) {
-      console.warn('AVISO: Mensagem vazia. Não será enviada.');
-      toast({
-        title: 'Aviso',
-        description: 'A mensagem não pode ser vazia.',
-        variant: 'warning',
-      });
-      return;
-    }
-
-    if (!user?.id) {
-      console.error('ERRO: ID do usuário logado não encontrado.');
-      toast({
-        title: 'Erro',
-        description: 'Não foi possível identificar o remetente da mensagem.',
-        variant: 'destructive',
-      });
+    if (!currentConversation || !newMessage.trim()) {
+      console.warn('⚠️ Tentativa de enviar mensagem sem conversa ou conteúdo');
       return;
     }
 
     await sendMessageMutation.mutateAsync({
       conversation_id: currentConversation.id,
-      content: newMessage,
+      content: newMessage.trim(),
+      type: 'text'
     });
-  }, [currentConversation, newMessage, user, sendMessageMutation, toast]);
+  }, [currentConversation, newMessage, sendMessageMutation]);
+
+  // Query para buscar tickets de uma conversa
+  const { 
+    data: tickets = [], 
+    isLoading: loadingTickets 
+  } = useQuery<Ticket[]>({
+    queryKey: ['tickets', currentConversation?.id],
+    queryFn: async () => {
+      if (!currentConversation?.id) return [];
+      
+      const response = await apiRequest('GET', `/ticket/${currentConversation.id}`);
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar tickets: ${response.status}`);
+      }
+      const data = await response.json();
+      return data.tickets || [];
+    },
+    enabled: !!currentConversation?.id && isLoggedIn,
+    staleTime: 30000,
+  });
+
+  // Query para buscar steps de um ticket específico
+  const getStepsForTicket = useCallback(async (ticketId: number): Promise<Step[]> => {
+    try {
+      const response = await apiRequest('GET', `/step/${ticketId}`);
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar steps: ${response.status}`);
+      }
+      const data = await response.json();
+      return data.steps || [];
+    } catch (error) {
+      console.error('❌ Erro ao buscar steps:', error);
+      return [];
+    }
+  }, []);
+
+  // Função para verificar se já existe um ticket ativo na conversa atual
+  const hasActiveTicket = useCallback(() => {
+    if (!currentConversation || !tickets) return false;
+    
+    // Verificar se há tickets com status ativo (em aberto ou em andamento)
+    const activeTicket = tickets.find(ticket => 
+      ticket.conversation_id === currentConversation.id && 
+      (!ticket.status || ticket.status === 'open' || ticket.status === 'in_progress' || ticket.status === 'pending')
+    );
+    
+    return !!activeTicket;
+  }, [currentConversation, tickets]);
+
+  // Função para buscar ticket ativo da conversa atual
+  const getActiveTicket = useCallback(() => {
+    if (!currentConversation || !tickets) return null;
+    
+    // Buscar ticket ativo (em aberto ou em andamento)
+    const activeTicket = tickets.find(ticket => 
+      ticket.conversation_id === currentConversation.id && 
+      (!ticket.status || ticket.status === 'open' || ticket.status === 'in_progress' || ticket.status === 'pending')
+    );
+    
+    return activeTicket || null;
+  }, [currentConversation, tickets]);
+
+  // FUNÇÃO MELHORADA PARA CRIAR PROPOSTA COMO MENSAGEM
+  const createProposal = useCallback(async (steps: Omit<CreateStepRequest, 'ticket_id'>[]) => {
+    if (!currentConversation) {
+      toast({
+        title: 'Erro',
+        description: 'Nenhuma conversa selecionada.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+
+    if (!user || user.type !== 'prestador') {
+      toast({
+        title: 'Erro',
+        description: 'Apenas prestadores podem enviar propostas.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+
+    let ticketId: number;
+    
+    try {
+      console.log('📋 Iniciando criação de proposta para conversa:', currentConversation.id);
+      
+      const existingActiveTicket = getActiveTicket();
+      
+      if (existingActiveTicket) {
+        console.log('✅ Ticket ativo existente encontrado. Adicionando steps ao ticket:', existingActiveTicket.id);
+        ticketId = existingActiveTicket.id;
+      } else {
+        console.log('🎫 Criando novo ticket...');
+        const ticketResponse = await apiRequest('POST', '/ticket', {
+          conversation_id: currentConversation.id
+        });
+        
+        if (!ticketResponse.ok) {
+          const errorText = await ticketResponse.text();
+          console.error('❌ Erro ao criar ticket:', errorText);
+          throw new Error(`Erro ao criar ticket: ${errorText}`);
+        }
+
+        const ticketResult = await ticketResponse.json();
+        ticketId = ticketResult.ticketService.id;
+        
+        if (!ticketId) {
+          throw new Error('ID do ticket não retornado pela API');
+        }
+
+        console.log('✅ Ticket criado com sucesso. ID:', ticketId);
+      }
+
+      // PASSO 2: Criar steps sequencialmente
+      console.log('📝 Criando steps sequencialmente...');
+      
+      const createdSteps = [];
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i];
+        
+        try {
+          const stepResponse = await apiRequest('POST', '/step', {
+            ticket_id: ticketId,
+            title: step.title,
+            price: step.price,
+          });
+
+          if (!stepResponse.ok) {
+            const errorText = await stepResponse.text();
+            console.error(`❌ Erro ao criar step ${i + 1}:`, errorText);
+            throw new Error(`Erro ao criar etapa ${i + 1}: ${errorText}`);
+          }
+
+          const stepResult = await stepResponse.json();
+          createdSteps.push({
+            id: stepResult.step.id,
+            title: step.title,
+            price: step.price,
+            status: 'pending'
+          });
+          console.log(`✅ Step ${i + 1} criado com sucesso:`, stepResult);
+        } catch (stepError) {
+          console.error(`❌ Erro ao criar step ${i + 1}:`, stepError);
+          throw new Error(`Falha ao criar etapa ${i + 1}: ${step.title}`);
+        }
+      }
+
+      console.log('✅ Todos os steps criados com sucesso');
+
+      // PASSO 3: Enviar proposta como mensagem estruturada
+      console.log('💬 Enviando proposta como mensagem...');
+      const totalPrice = steps.reduce((sum, s) => sum + s.price, 0);
+      
+      const proposalData = {
+        ticket_id: ticketId,
+        steps: createdSteps,
+        total: totalPrice,
+        status: 'pending'
+      };
+
+      // Enviar mensagem de proposta
+      await sendMessageMutation.mutateAsync({
+        conversation_id: currentConversation.id,
+        content: `Proposta #${ticketId}`, // Conteúdo simples para fallback
+        type: 'proposal',
+        proposal_data: proposalData
+      });
+
+      // Invalidar queries para atualizar dados
+      queryClient.invalidateQueries({ queryKey: ['tickets', currentConversation.id] });
+      queryClient.invalidateQueries({ queryKey: ['messages', currentConversation.id] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+
+      toast({
+        title: 'Proposta enviada',
+        description: 'Sua proposta foi enviada com sucesso!',
+      });
+
+      return true;
+    } catch (error) {
+      console.error('❌ Erro ao criar proposta:', error);
+      toast({
+        title: 'Erro',
+        description: error instanceof Error ? error.message : 'Erro ao criar proposta',
+        variant: 'destructive',
+      });
+      return false;
+    }
+  }, [currentConversation, user, getActiveTicket, sendMessageMutation, queryClient, toast]);
 
   return {
+    // Estados
     conversations: processedConversations,
     currentConversation,
     messages,
     newMessage,
-    unreadMessageCount: 0, // TODO: Implementar contagem de mensagens não lidas
+    tickets,
+    unreadMessageCount: 0,
+    
+    // Loading states
     loadingConversations,
     loadingMessages,
-    sendingMessage: sendMessageMutation.isLoading,
+    loadingTickets,
+    sendingMessage: sendMessageMutation.isPending,
+    
+    // Funções
     setNewMessage,
     sendMessage,
     selectConversation,
     startConversation,
     startConversationAndNavigate,
+    createProposal,
+    getStepsForTicket,
+    hasActiveTicket,
+    getActiveTicket,
+    
+    // Errors
     conversationsError,
     messagesError,
   };
 }
-
-// Serviço para ser usado por outros componentes
-export const MessagingService = {
-  startConversationAndNavigate: (targetUserId: number, setLocation: (path: string) => void) => {
-    // Esta função será implementada dentro do useMessaging hook
-    // e exposta através do contexto ou de uma forma que permita o acesso
-    // por componentes externos sem recriar o hook.
-    console.error('MessagingService.startConversationAndNavigate deve ser usado via hook useMessaging.');
-  }
-};
 
 

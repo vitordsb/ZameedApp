@@ -1,3 +1,4 @@
+
 import { QueryClient } from "@tanstack/react-query";
 
 export const API_BASE_URL = "https://zameed-backend.onrender.com";
@@ -6,7 +7,7 @@ export async function apiRequest(
   method: string,
   path: string,
   data?: unknown
- ): Promise<Response> {
+): Promise<Response> {
   const url = API_BASE_URL + path;
 
   const token = sessionStorage.getItem("token");
@@ -37,7 +38,7 @@ export async function apiRequest(
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60 * 1000,
+      staleTime: 5 * 60 * 10000,
       retry: false,
       refetchOnWindowFocus: false,
     },

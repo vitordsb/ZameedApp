@@ -13,7 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Send, Users, MessageCircle, ArrowLeft, FileText, CheckCircle, XCircle, Plus, Minus, Clock, DollarSign, Eye, List, Info } from 'lucide-react';
+import { Send, Users, MessageCircle, ArrowLeft, FileText, CheckCircle, XCircle, Plus, Minus, Clock, DollarSign, Eye, List, Info, PaperclipIcon, Calendar } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import AplicationLayout from '@/components/layouts/ApplicationLayout';
@@ -46,6 +46,7 @@ export default function Messages() {
     createProposal,
     getStepsForTicket,
     hasActiveTicket,
+    updateTicketStatus,
   } = useMessaging(initialPartnerId);
 
   // Estados para modal de proposta
@@ -59,12 +60,11 @@ export default function Messages() {
   const [selectedTicketSteps, setSelectedTicketSteps] = useState<any[]>([]);
   const [loadingSteps, setLoadingSteps] = useState(false);
   const [ticketStepsMap, setTicketStepsMap] = useState<Record<number, any[]>>({});
+  
   const canCreateProposal = () => {
-    return user?.type === 'prestador';
+    // Apenas prestadores podem criar propostas, e não podem criar para outros prestadores
+    return user?.type === 'prestador' && currentConversation?.otherUser.type !== 'prestador';
   };
-
-  useEffect(() => {
-  }, [initialPartnerId, currentConversation, conversations, tickets, user]);
 
   useEffect(() => {
     const loadAllTicketSteps = async () => {
@@ -120,7 +120,7 @@ export default function Messages() {
         return {
           variant: 'default' as const,
           icon: CheckCircle,
-          label: 'Aceito',
+          label: 'Aceita',
           color: 'text-green-600',
           bgColor: 'bg-green-50',
           borderColor: 'border-green-200'
@@ -130,7 +130,7 @@ export default function Messages() {
         return {
           variant: 'destructive' as const,
           icon: XCircle,
-          label: 'Rejeitado',
+          label: 'Rejeitada',
           color: 'text-red-600',
           bgColor: 'bg-red-50',
           borderColor: 'border-red-200'
@@ -231,7 +231,6 @@ export default function Messages() {
   };
 
   const handleConversationClick = (conversation: any) => {
-    
     if (!conversation.id) {
       console.error('ERRO: Conversa sem ID válido');
       return;
@@ -281,6 +280,131 @@ export default function Messages() {
   const latestProposalSteps = latestProposal ? (ticketStepsMap[latestProposal.id] || []) : [];
   const latestProposalTotal = calculateProposalTotal(latestProposalSteps);
   const latestProposalStatusConfig = getStatusConfig(latestProposal?.status);
+
+  // COMPONENTE DE PROPOSTA BASEADO NA IMAGEM
+  const ProposalCard = ({ ticket, steps, isLatest = false }: { ticket: any, steps: any[], isLatest?: boolean }) => {
+    const total = calculateProposalTotal(steps);
+    const statusConfig = getStatusConfig(ticket.status);
+    const canInteract = user?.type === 'contratante' && ticket.status === 'pending';
+
+    return (
+      <div className={`rounded-lg p-4 shadow-md ${isLatest ? 'bg-gradient-to-br from-orange-400 to-amber-500' : 'bg-gradient-to-br from-orange-300 to-amber-400'} text-white relative overflow-hidden`}>
+        {/* Header com ícone de anexo */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className="bg-white/20 p-1 rounded-md">
+              <PaperclipIcon className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold">Proposta de Projeto</h3>
+              <p className="text-orange-100 text-xs">#{ticket.id}</p>
+            </div>
+          </div>
+          <Badge 
+            variant="secondary" 
+            className={`${statusConfig.bgColor} ${statusConfig.color} border-0 text-xs`}
+          >
+            <statusConfig.icon className="h-3 w-3 mr-1" />
+            {statusConfig.label}
+          </Badge>
+        </div>
+
+        {/* Valor total destacado */}
+        <div className="mb-4">
+          <p className="text-orange-100 text-xs mb-1">Valor total:</p>
+          <p className="text-2xl font-bold">{formatCurrency(total)}</p>
+        </div>
+
+        {/* Fases */}
+        <div className="mb-4">
+          <p className="text-orange-100 text-xs mb-2">Fases</p>
+          <div className="space-y-1">
+            {steps.slice(0, 3).map((step, index) => (
+              <div key={step.id} className="bg-white/10 rounded-md p-2 backdrop-blur-sm">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium">{step.title}</span>
+                  <span className="text-sm font-bold">{formatCurrency(step.price)}</span>
+                </div>
+              </div>
+            ))}
+            {steps.length > 3 && (
+              <div className="bg-white/10 rounded-md p-2 backdrop-blur-sm">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium">+{steps.length - 3} Fases</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleViewProposalDetails(ticket.id)}
+                    className="text-white hover:bg-white/20 h-auto p-1 text-xs"
+                  >
+                    Ver mais
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Ações */}
+        <div className="flex gap-2">
+          {canInteract && (
+            <>
+              <Button
+                onClick={() => updateTicketStatus(ticket.id, 'accepted')}
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white border-0 text-sm"
+              >
+                <CheckCircle className="h-4 w-4 mr-1" />
+                Aceitar
+              </Button>
+              <Button
+                onClick={() => updateTicketStatus(ticket.id, 'rejected')}
+                variant="outline"
+                className="flex-1 bg-white/20 border-white/30 text-white hover:bg-white/30 text-sm"
+              >
+                <XCircle className="h-4 w-4 mr-1" />
+                Rejeitar
+              </Button>
+            </>
+          )}
+          {!canInteract && (
+            <Button
+              onClick={() => handleViewProposalDetails(ticket.id)}
+              className="flex-1 bg-white/20 border-white/30 text-white hover:bg-white/30 text-sm"
+            >
+              <Eye className="h-4 w-4 mr-1" />
+              Ver detalhes
+            </Button>
+          )}
+        </div>
+
+        {/* Mensagem de status final */}
+        {ticket.status === 'accepted' && (
+          <div className="mt-3 flex items-center gap-2 text-sm text-orange-100">
+            <CheckCircle className="h-4 w-4 text-green-300" />
+            Proposta Aceita!
+          </div>
+        )}
+        {ticket.status === 'rejected' && (
+          <div className="mt-3 flex items-center gap-2 text-sm text-orange-100">
+            <XCircle className="h-4 w-4 text-red-300" />
+            Proposta Rejeitada.
+          </div>
+        )}
+        {ticket.status === 'pending' && user?.type === 'contratante' && (
+          <div className="mt-3 flex items-center gap-2 text-sm text-orange-100">
+            <Clock className="h-4 w-4" />
+            Aguardando sua decisão.
+          </div>
+        )}
+        {ticket.status === 'pending' && user?.type === 'prestador' && (
+          <div className="mt-3 flex items-center gap-2 text-sm text-orange-100">
+            <Clock className="h-4 w-4" />
+            Aguardando resposta do cliente.
+          </div>
+        )}
+      </div>
+    );
+  };
 
   if (loadingConversations) {
     return (
@@ -440,6 +564,91 @@ export default function Messages() {
                         Proposta Ativa
                       </Badge>
                     )}
+
+                    {/* BOTÃO NOVA PROPOSTA - APENAS PARA PRESTADORES QUE NÃO ESTÃO CONVERSANDO COM OUTROS PRESTADORES */}
+                    {canCreateProposal() && (
+                      <Dialog open={showProposalModal} onOpenChange={setShowProposalModal}>
+                        <DialogTrigger asChild>
+                          <Button size="sm" className="bg-orange-600 hover:bg-orange-700">
+                            <Plus className="h-4 w-4 mr-1" />
+                            Nova Proposta
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-2xl max-h-[90vh]">
+                          <DialogHeader>
+                            <DialogTitle>Criar Nova Proposta</DialogTitle>
+                          </DialogHeader>
+                          <ScrollArea className="max-h-[70vh] pr-4">
+                            <div className="space-y-4">
+                              <div className="space-y-3">
+                                {proposalSteps.map((step, index) => (
+                                  <div key={index} className="flex gap-3 items-end">
+                                    <div className="flex-1">
+                                      <Label htmlFor={`step-title-${index}`}>Título da Etapa</Label>
+                                      <Input
+                                        id={`step-title-${index}`}
+                                        value={step.title}
+                                        onChange={(e) => updateProposalStep(index, 'title', e.target.value)}
+                                        placeholder="Ex: Análise inicial do projeto"
+                                      />
+                                    </div>
+                                    <div className="w-32">
+                                      <Label htmlFor={`step-price-${index}`}>Preço (R$)</Label>
+                                      <Input
+                                        id={`step-price-${index}`}
+                                        type="number"
+                                        value={step.price}
+                                        onChange={(e) => updateProposalStep(index, 'price', parseFloat(e.target.value) || 0)}
+                                        placeholder="0,00"
+                                      />
+                                    </div>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="icon"
+                                      onClick={() => removeProposalStep(index)}
+                                      disabled={proposalSteps.length === 1}
+                                    >
+                                      <Minus className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                              
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={addProposalStep}
+                                className="w-full"
+                              >
+                                <Plus className="h-4 w-4 mr-2" />
+                                Adicionar Etapa
+                              </Button>
+
+                              <div className="flex justify-between items-center pt-4 border-t">
+                                <div className="text-lg font-semibold">
+                                  Total: R$ {calculateProposalTotal(proposalSteps).toFixed(2)}
+                                </div>
+                                <div className="flex gap-2">
+                                  <Button
+                                    variant="outline"
+                                    onClick={() => setShowProposalModal(false)}
+                                  >
+                                    Cancelar
+                                  </Button>
+                                  <Button
+                                    onClick={handleSendProposal}
+                                    disabled={sendingProposal}
+                                  >
+                                    {sendingProposal ? 'Enviando...' : 'Enviar Proposta'}
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          </ScrollArea>
+                        </DialogContent>
+                      </Dialog>
+                    )}
                   </div>
                 </CardHeader>
                 
@@ -448,7 +657,7 @@ export default function Messages() {
                 {/* ÁREA DE PROPOSTA - EXIBIDA PARA TODOS OS USUÁRIOS QUANDO HÁ PROPOSTAS */}
                 {latestProposal && (
                   <div className="p-4 bg-gradient-to-r from-orange-50 to-amber-50 border-b flex-shrink-0">
-                    <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center justify-between mb-4">
                       <h4 className="font-medium text-gray-900 flex items-center gap-2">
                         <FileText className="h-4 w-4 text-orange-600" />
                         {canCreateProposal() ? 'Última Proposta Enviada' : 'Proposta Recebida'}
@@ -459,405 +668,156 @@ export default function Messages() {
                         )}
                       </h4>
                       
-                      <div className="flex items-center gap-2">
-                        {tickets.length > 1 && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setShowAllProposals(true)}
-                            className="text-orange-600 border-orange-200 hover:bg-orange-50"
-                          >
-                            <List className="h-3 w-3 mr-1" />
-                            Ver Mais Propostas
-                          </Button>
-                        )}
-                        
-                        {/* BOTÃO NOVA PROPOSTA - APENAS PARA PRESTADORES */}
-                        {canCreateProposal() && !hasActiveTicket() && (
-                          <Dialog open={showProposalModal} onOpenChange={setShowProposalModal}>
-                            <DialogTrigger asChild>
-                              <Button size="sm" className="bg-orange-600 hover:bg-orange-700">
-                                <Plus className="h-4 w-4 mr-1" />
-                                Nova Proposta
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent className="max-w-2xl max-h-[90vh]">
-                              <DialogHeader>
-                                <DialogTitle>Criar Nova Proposta</DialogTitle>
-                              </DialogHeader>
-                              <ScrollArea className="max-h-[70vh] pr-4">
-                                <div className="space-y-4">
-                                  <div className="space-y-3">
-                                    {proposalSteps.map((step, index) => (
-                                      <div key={index} className="flex gap-3 items-end">
-                                        <div className="flex-1">
-                                          <Label htmlFor={`step-title-${index}`}>Título da Etapa</Label>
-                                          <Input
-                                            id={`step-title-${index}`}
-                                            value={step.title}
-                                            onChange={(e) => updateProposalStep(index, 'title', e.target.value)}
-                                            placeholder="Ex: Análise inicial do projeto"
-                                          />
-                                        </div>
-                                        <div className="w-32">
-                                          <Label htmlFor={`step-price-${index}`}>Preço (R$)</Label>
-                                          <Input
-                                            id={`step-price-${index}`}
-                                            type="number"
-                                            value={step.price}
-                                            onChange={(e) => updateProposalStep(index, 'price', parseFloat(e.target.value) || 0)}
-                                            placeholder="0,00"
-                                          />
-                                        </div>
-                                        <Button
-                                          type="button"
-                                          variant="outline"
-                                          size="icon"
-                                          onClick={() => removeProposalStep(index)}
-                                          disabled={proposalSteps.length === 1}
-                                        >
-                                          <Minus className="h-4 w-4" />
-                                        </Button>
-                                      </div>
-                                    ))}
-                                  </div>
-                                  
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    onClick={addProposalStep}
-                                    className="w-full"
-                                  >
-                                    <Plus className="h-4 w-4 mr-2" />
-                                    Adicionar Etapa
-                                  </Button>
-
-                                  <div className="flex justify-between items-center pt-4 border-t">
-                                    <div className="text-lg font-semibold">
-                                      Total: R$ {calculateProposalTotal(proposalSteps).toFixed(2)}
-                                    </div>
-                                    <div className="flex gap-2">
-                                      <Button
-                                        variant="outline"
-                                        onClick={() => setShowProposalModal(false)}
-                                      >
-                                        Cancelar
-                                      </Button>
-                                      <Button
-                                        onClick={handleSendProposal}
-                                        disabled={sendingProposal}
-                                      >
-                                        {sendingProposal ? 'Enviando...' : 'Enviar Proposta'}
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </div>
-                              </ScrollArea>
-                            </DialogContent>
-                          </Dialog>
-                        )}
-
-                        {/* INFORMAÇÃO PARA CONTRATANTES */}
-                        {!canCreateProposal() && (
-                          <div className="flex items-center gap-2 text-sm text-gray-600 bg-blue-50 px-3 py-1 rounded-lg">
-                            <Info className="h-4 w-4 text-blue-600" />
-                            <span>Apenas prestadores podem criar propostas</span>
-                          </div>
-                        )}
-                      </div>
+                      {tickets.length > 1 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowAllProposals(true)}
+                          className="text-orange-600 border-orange-200 hover:bg-orange-50"
+                        >
+                          <List className="h-3 w-3 mr-1" />
+                          Ver Todas
+                        </Button>
+                      )}
                     </div>
                     
-                    {/* CARD DA ÚLTIMA PROPOSTA - VISÍVEL PARA TODOS */}
-                    <Card className={`${latestProposalStatusConfig.bgColor} ${latestProposalStatusConfig.borderColor} border-2`}>
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-lg ${latestProposalStatusConfig.bgColor}`}>
-                              <FileText className={`h-4 w-4 ${latestProposalStatusConfig.color}`} />
-                            </div>
-                            <div>
-                              <h5 className="font-semibold text-gray-900">
-                                Proposta #{latestProposal.id}
-                              </h5>
-                              <div className="flex items-center gap-2 mt-1">
-                                <Badge variant={latestProposalStatusConfig.variant} className="text-xs">
-                                  <latestProposalStatusConfig.icon className="h-3 w-3 mr-1" />
-                                  {latestProposalStatusConfig.label}
-                                </Badge>
-                                <span className="text-xs text-gray-500">
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          
-                          <div className="text-right">
-                            <div className="flex items-center gap-1 font-bold text-lg">
-                              <DollarSign className="h-4 w-4 text-green-600" />
-                              <span className="text-green-600">{formatCurrency(latestProposalTotal)}</span>
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              {latestProposalSteps.length} etapa{latestProposalSteps.length !== 1 ? 's' : ''}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <div className="text-sm text-gray-600 flex-1 min-w-0 mr-2">
-                            {latestProposalSteps.length > 0 ? (
-                              <span className="truncate">
-                                Primeira etapa: {latestProposalSteps[0]?.title}
-                                {latestProposalSteps.length > 1 && ` +${latestProposalSteps.length - 1} mais`}
-                              </span>
-                            ) : (
-                              <span>Carregando detalhes...</span>
-                            )}
-                          </div>
-                          
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleViewProposalDetails(latestProposal.id)}
-                            disabled={loadingSteps}
-                            className={`${latestProposalStatusConfig.color} hover:bg-white/50 flex-shrink-0`}
-                          >
-                            <Eye className="h-3 w-3 mr-1" />
-                            Ver Detalhes
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    {/* CARD DA PROPOSTA BASEADO NA IMAGEM */}
+                    <ProposalCard 
+                      ticket={latestProposal} 
+                      steps={latestProposalSteps} 
+                      isLatest={true}
+                    />
                   </div>
                 )}
 
-                {/* ÁREA DE MENSAGENS COM SCROLL ESPECÍFICO */}
-                <div className="flex-1 overflow-hidden flex flex-col">
-                  <ScrollArea className={latestProposal ? "h-[calc(90vh-20rem)]" : "h-[calc(90vh-12rem)]"}>
-                    <div className="p-4">
-                      {loadingMessages ? (
-                        <div className="flex items-center justify-center h-32">
-                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
-                        </div>
-                      ) : messagesError ? (
-                        <div className="text-center text-red-600 p-4">
-                          Erro ao carregar mensagens
-                        </div>
-                      ) : messages.length === 0 ? (
-                        <div className="text-center text-gray-500 p-8">
-                          <MessageCircle className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                          <p className="text-lg font-medium mb-2">Nenhuma mensagem ainda</p>
-                          <p className="text-sm">
-                            {canCreateProposal() 
-                              ? 'Inicie a conversa enviando uma mensagem ou criando uma proposta'
-                              : 'Inicie a conversa enviando uma mensagem'
-                            }
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          {messages.map((message) => (
+                {/* ÁREA DE MENSAGENS */}
+                <CardContent className="flex-1 p-0 overflow-hidden">
+                  <ScrollArea className="h-[calc(90vh-20rem)] p-4">
+                    {loadingMessages ? (
+                      <div className="flex items-center justify-center h-32">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
+                      </div>
+                    ) : messages.length === 0 ? (
+                      <div className="text-center text-gray-500 py-8">
+                        <MessageCircle className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                        <p>Nenhuma mensagem ainda</p>
+                        <p className="text-sm">Inicie a conversa enviando uma mensagem</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {messages.map((message) => (
+                          <div
+                            key={message.id}
+                            className={`flex ${
+                              message.sender_id === user?.id ? 'justify-end' : 'justify-start'
+                            }`}
+                          >
                             <div
-                              key={message.id}
-                              className={`flex ${
-                                message.sender_id === user?.id ? 'justify-end' : 'justify-start'
+                              className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                                message.sender_id === user?.id
+                                  ? 'bg-orange-500 text-white'
+                                  : 'bg-gray-100 text-gray-900'
                               }`}
                             >
-                              <div
-                                className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                              <p className="text-sm">{message.content}</p>
+                              <p
+                                className={`text-xs mt-1 ${
                                   message.sender_id === user?.id
-                                    ? 'bg-orange-500 text-white'
-                                    : 'bg-gray-200 text-gray-900'
+                                    ? 'text-orange-100'
+                                    : 'text-gray-500'
                                 }`}
                               >
-                                <p className="text-sm">{message.content}</p>
-                                <p
-                                  className={`text-xs mt-1 ${
-                                    message.sender_id === user?.id
-                                      ? 'text-orange-100'
-                                      : 'text-gray-500'
-                                  }`}
-                                >
-                                  {formatMessageTime(message.created_at)}
-                                </p>
-                              </div>
+                                {formatMessageTime(message.created_at)}
+                              </p>
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </ScrollArea>
+                </CardContent>
 
-                  {/* INPUT DE MENSAGEM */}
-                  <div className="p-4 border-t bg-white flex-shrink-0">
-                    <form onSubmit={handleSendMessage} className="flex gap-2">
-                      <Input
-                        value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
-                        placeholder="Digite sua mensagem..."
-                        disabled={sendingMessage}
-                        className="flex-1"
-                      />
-                      <Button
-                        type="submit"
-                        disabled={sendingMessage || !newMessage.trim()}
-                        size="icon"
-                      >
-                        <Send className="h-4 w-4" />
-                      </Button>
-                    </form>
-                  </div>
+                {/* ÁREA DE INPUT DE MENSAGEM */}
+                <div className="p-4 border-t flex-shrink-0">
+                  <form onSubmit={handleSendMessage} className="flex gap-2">
+                    <Input
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      placeholder="Digite sua mensagem..."
+                      disabled={sendingMessage}
+                      className="flex-1"
+                    />
+                    <Button
+                      type="submit"
+                      disabled={sendingMessage || !newMessage.trim()}
+                      size="icon"
+                      className="bg-orange-600 hover:bg-orange-700"
+                    >
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  </form>
                 </div>
               </>
             ) : (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center text-gray-500">
+              <div className="flex-1 flex items-center justify-center text-gray-500">
+                <div className="text-center">
                   <MessageCircle className="h-16 w-16 mx-auto mb-4 text-gray-300" />
-                  <h3 className="text-lg font-medium mb-2">Selecione uma conversa</h3>
-                  <p className="text-sm">
-                    Escolha uma conversa da lista para começar a trocar mensagens
-                  </p>
+                  <p className="text-lg font-medium">Selecione uma conversa</p>
+                  <p className="text-sm">Escolha uma conversa para começar a trocar mensagens</p>
                 </div>
               </div>
             )}
           </Card>
         </div>
 
-        {/* MODAL PARA VER TODAS AS PROPOSTAS - DISPONÍVEL PARA TODOS */}
-        <Dialog open={showAllProposals} onOpenChange={setShowAllProposals}>
-          <DialogContent className="max-w-4xl max-h-[90vh]">
+        {/* MODAL DE DETALHES DA PROPOSTA */}
+        <Dialog open={showProposalDetails} onOpenChange={setShowProposalDetails}>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>
-                {canCreateProposal() ? 'Todas as Propostas Enviadas' : 'Todas as Propostas Recebidas'} ({tickets.length})
-              </DialogTitle>
+              <DialogTitle>Detalhes da Proposta</DialogTitle>
             </DialogHeader>
-            <ScrollArea className="max-h-[70vh] pr-4">
-              <div className="space-y-4">
-                {tickets.map((ticket) => {
-                  const steps = ticketStepsMap[ticket.id] || [];
-                  const total = calculateProposalTotal(steps);
-                  const statusConfig = getStatusConfig(ticket.status);
-                  const StatusIcon = statusConfig.icon;
-
-                  return (
-                    <Card key={ticket.id} className={`${statusConfig.bgColor} ${statusConfig.borderColor} border-2`}>
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-lg ${statusConfig.bgColor}`}>
-                              <FileText className={`h-4 w-4 ${statusConfig.color}`} />
-                            </div>
-                            <div>
-                              <h5 className="font-semibold text-gray-900">
-                                Proposta #{ticket.id}
-                              </h5>
-                              <div className="flex items-center gap-2 mt-1">
-                                <Badge variant={statusConfig.variant} className="text-xs">
-                                  <StatusIcon className="h-3 w-3 mr-1" />
-                                  {statusConfig.label}
-                                </Badge>
-                                <span className="text-xs text-gray-500">
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center gap-3">
-                            <div className="text-right">
-                              <div className="flex items-center gap-1 font-bold text-lg">
-                                <DollarSign className="h-4 w-4 text-green-600" />
-                                <span className="text-green-600">{formatCurrency(total)}</span>
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                {steps.length} etapa{steps.length !== 1 ? 's' : ''}
-                              </div>
-                            </div>
-                            
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setShowAllProposals(false);
-                                handleViewProposalDetails(ticket.id);
-                              }}
-                              className={`${statusConfig.color} hover:bg-white/50`}
-                            >
-                              <Eye className="h-3 w-3 mr-1" />
-                              Ver Detalhes
-                            </Button>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
+            <div className="space-y-4">
+              {selectedTicketSteps.map((step, index) => (
+                <div key={step.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="font-medium">{step.title}</p>
+                    <p className="text-sm text-gray-500">Etapa {index + 1}</p>
+                  </div>
+                  <p className="font-bold text-lg">{formatCurrency(step.price)}</p>
+                </div>
+              ))}
+              <div className="border-t pt-4">
+                <div className="flex justify-between items-center">
+                  <p className="text-lg font-bold">Total:</p>
+                  <p className="text-2xl font-bold text-green-600">
+                    {formatCurrency(calculateProposalTotal(selectedTicketSteps))}
+                  </p>
+                </div>
               </div>
-            </ScrollArea>
+            </div>
           </DialogContent>
         </Dialog>
 
-        <Dialog open={showProposalDetails} onOpenChange={setShowProposalDetails}>
-          <DialogContent className="max-w-4xl max-h-[90vh] p-0">
-            <DialogHeader className="p-6 pb-0">
-              <DialogTitle className="text-2xl font-bold text-gray-900">
-                Detalhes da Proposta
-              </DialogTitle>
+        {/* MODAL DE TODAS AS PROPOSTAS */}
+        <Dialog open={showAllProposals} onOpenChange={setShowAllProposals}>
+          <DialogContent className="max-w-4xl max-h-[90vh]">
+            <DialogHeader>
+              <DialogTitle>Todas as Propostas</DialogTitle>
             </DialogHeader>
-            <Separator />
-            <ScrollArea className="flex-1 p-6">
-              {loadingSteps ? (
-                <div className="flex items-center justify-center h-32">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
-                  <span className="ml-3 text-gray-600">Carregando detalhes...</span>
-                </div>
-              ) : selectedTicketSteps.length === 0 ? (
-                <div className="text-center py-12">
-                  <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    Nenhuma etapa encontrada
-                  </h3>
-                  <p className="text-gray-500">
-                    Esta proposta ainda não possui etapas definidas.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-gray-900">
-                      Etapas do Projeto ({selectedTicketSteps.length})
-                    </h3>
-                    <div className="text-2xl font-bold text-green-600">
-                      {formatCurrency(calculateProposalTotal(selectedTicketSteps))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    {selectedTicketSteps.map((step, index) => (
-                      <Card key={step.id} className="bg-white border border-gray-200">
-                        <CardContent className="p-4">
-                          <div className="flex items-start gap-4">
-                            <div className="w-8 h-8 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center font-semibold">
-                              {index + 1}
-                            </div>
-                            <div className="flex-1">
-                              <h4 className="font-semibold text-gray-900 mb-1">
-                                {step.title}
-                              </h4>
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm text-gray-600">
-                                  Etapa {index + 1} de {selectedTicketSteps.length}
-                                </span>
-                                <div className="flex items-center gap-1 font-bold text-lg">
-                                  <DollarSign className="h-4 w-4 text-green-600" />
-                                  <span className="text-green-600">{formatCurrency(step.price)}</span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
-              )}
+            <ScrollArea className="max-h-[70vh]">
+              <div className="grid gap-4">
+                {tickets.map((ticket) => {
+                  const steps = ticketStepsMap[ticket.id] || [];
+                  return (
+                    <ProposalCard 
+                      key={ticket.id}
+                      ticket={ticket} 
+                      steps={steps} 
+                      isLatest={false}
+                    />
+                  );
+                })}
+              </div>
             </ScrollArea>
           </DialogContent>
         </Dialog>

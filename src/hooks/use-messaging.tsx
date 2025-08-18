@@ -206,9 +206,6 @@ export function useMessaging(initialPartnerId?: string | null) {
       })
       .filter((conv: Conversation | null) => conv !== null) as Conversation[];
 
-    tempProcessed.forEach((conv, index) => {
-    });
-    
     return tempProcessed;
   }, [conversationsData, user, usersData]);
 
@@ -274,10 +271,6 @@ export function useMessaging(initialPartnerId?: string | null) {
       queryClient.invalidateQueries({ queryKey: ['messages', currentConversation?.id] });
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       setNewMessage('');
-      toast({
-        title: 'Mensagem enviada',
-        description: 'Sua mensagem foi enviada com sucesso.',
-      });
     },
     onError: (error) => {
       console.error('❌ Erro ao enviar mensagem:', error);
@@ -411,8 +404,8 @@ export function useMessaging(initialPartnerId?: string | null) {
       return processedMessages;
     },
     enabled: !!currentConversation?.id && isLoggedIn && typeof currentConversation.id === 'number',
-    staleTime: 10000,
-    refetchInterval: 15000,
+    staleTime: 1000,
+    refetchInterval: 1500,
   });
 
   const selectConversation = useCallback((conversation: Conversation) => {
@@ -437,7 +430,7 @@ export function useMessaging(initialPartnerId?: string | null) {
     });
   }, [currentConversation, newMessage, sendMessageMutation]);
 
-  // Query para buscar tickets de uma conversa
+  // Query para buscar tickets de uma conversa - MELHORADA
   const { 
     data: tickets = [], 
     isLoading: loadingTickets 
@@ -446,7 +439,7 @@ export function useMessaging(initialPartnerId?: string | null) {
     queryFn: async () => {
       if (!currentConversation?.id) return [];
       
-      const response = await apiRequest('GET', `/ticket/${currentConversation.id}`);
+      const response = await apiRequest('GET', `/ticket/conversation/${currentConversation.id}`);
       if (!response.ok) {
         throw new Error(`Erro ao buscar tickets: ${response.status}`);
       }
@@ -457,7 +450,7 @@ export function useMessaging(initialPartnerId?: string | null) {
     staleTime: 30000,
   });
 
-  // Query para buscar steps de um ticket específico
+  // Query para buscar steps de um ticket específico - MELHORADA
   const getStepsForTicket = useCallback(async (ticketId: number): Promise<Step[]> => {
     try {
       const response = await apiRequest('GET', `/step/${ticketId}`);
@@ -531,12 +524,12 @@ export function useMessaging(initialPartnerId?: string | null) {
           throw new Error(`Erro ao criar ticket: ${errorText}`);
         }
         const ticketResult = await ticketResponse.json();
-        ticketId = ticketResult.ticketService.id;
+        ticketId = ticketResult.ticketService?.id || ticketResult.ticket?.id;
         if (!ticketId) {
           throw new Error('ID do ticket não retornado pela API');
         }
-
       }
+
       const createdSteps = [];
       for (let i = 0; i < steps.length; i++) {
         const step = steps[i];
@@ -556,7 +549,7 @@ export function useMessaging(initialPartnerId?: string | null) {
 
           const stepResult = await stepResponse.json();
           createdSteps.push({
-            id: stepResult.step.id,
+            id: stepResult.step?.id || stepResult.id,
             title: step.title,
             price: step.price,
             status: 'pending'
@@ -579,7 +572,7 @@ export function useMessaging(initialPartnerId?: string | null) {
       // Enviar mensagem de proposta
       await sendMessageMutation.mutateAsync({
         conversation_id: currentConversation.id,
-        content: `Proposta enviada, por favor visualizar no Ticket Acima #${ticketId}`, // Conteúdo simples para fallback
+        content: `📋 Nova proposta enviada! Ticket #${ticketId} - Total: R$ ${totalPrice.toFixed(2)}`, 
         type: 'proposal',
         proposal_data: proposalData
       });
@@ -606,6 +599,51 @@ export function useMessaging(initialPartnerId?: string | null) {
     }
   }, [currentConversation, user, getActiveTicket, sendMessageMutation, queryClient, toast]);
 
+  // NOVA FUNÇÃO PARA ACEITAR/REJEITAR PROPOSTA
+  const updateTicketStatus = useCallback(async (ticketId: number, status: 'accepted' | 'rejected') => {
+    if (!currentConversation) {
+      toast({
+        title: 'Erro',
+        description: 'Nenhuma conversa selecionada.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+
+    try {
+      const response = await apiRequest('PATCH', `/ticket/${ticketId}`, {
+        status: status
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Erro ao atualizar status do ticket:', errorText);
+        throw new Error(`Erro ao atualizar proposta: ${errorText}`);
+      }
+
+      // Invalidar queries para atualizar dados
+      queryClient.invalidateQueries({ queryKey: ['tickets', currentConversation.id] });
+      queryClient.invalidateQueries({ queryKey: ['messages', currentConversation.id] });
+
+      toast({
+        title: status === 'accepted' ? 'Proposta aceita' : 'Proposta rejeitada',
+        description: status === 'accepted' 
+          ? 'A proposta foi aceita com sucesso!' 
+          : 'A proposta foi rejeitada.',
+      });
+
+      return true;
+    } catch (error) {
+      console.error('❌ Erro ao atualizar status:', error);
+      toast({
+        title: 'Erro',
+        description: error instanceof Error ? error.message : 'Erro ao atualizar proposta',
+        variant: 'destructive',
+      });
+      return false;
+    }
+  }, [currentConversation, queryClient, toast]);
+
   return {
     // Estados
     conversations: processedConversations,
@@ -631,6 +669,7 @@ export function useMessaging(initialPartnerId?: string | null) {
     getStepsForTicket,
     hasActiveTicket,
     getActiveTicket,
+    updateTicketStatus, // Nova função
     
     // Errors
     conversationsError,

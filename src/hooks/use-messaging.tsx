@@ -137,8 +137,6 @@ export function useMessaging(initialPartnerId?: string | null) {
     queryFn: async () => {
       if (userIds.length === 0) return {};
       
-      console.log('🔍 Buscando dados dos usuários:', userIds);
-      
       const userPromises = userIds.map(async (userId: number) => {
         try {
           const response = await apiRequest('GET', `/users/${userId}`);

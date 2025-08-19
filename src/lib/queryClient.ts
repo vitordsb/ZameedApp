@@ -6,7 +6,7 @@ export const API_BASE_URL = "https://zameed-backend.onrender.com";
 export async function apiRequest(
   method: string,
   path: string,
-  data?: unknown
+  data?: Record<string, unknown> | FormData
 ): Promise<Response> {
   const url = API_BASE_URL + path;
 

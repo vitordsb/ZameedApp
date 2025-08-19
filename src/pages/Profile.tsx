@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import AplicationLayout from "@/components/layouts/ApplicationLayout"; 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -106,7 +106,7 @@ interface AddressData {
 }
 
 export default function Profile() {
-  const { user} = useAuth();
+  const { user, logout } = useAuth();
   const { toast } = useToast();
 
   // Estado dos campos de edição do perfil
@@ -134,6 +134,12 @@ export default function Profile() {
   const [services, setServices] = useState<Service[]>([]);
   const [loadingServices, setLoadingServices] = useState(false);
   const [errorServices, setErrorServices] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [draftSvc, setDraftSvc] = useState<{
+    title: string;
+    description: string;
+    price: string;
+  }>({ title: "", description: "", price: "" });
 
   // Estados para criação de novo serviço
   const [isCreating, setIsCreating] = useState(false);
@@ -154,7 +160,20 @@ export default function Profile() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   
   // Estados para o processo de upload em duas etapas
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadedImageId, setUploadedImageId] = useState<number | null>(null);
+  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   
+  // Estados para criação do item do portfólio (segunda etapa)
+  const [isCreatingPortfolioItem, setIsCreatingPortfolioItem] = useState(false);
+  const [creatingPortfolioItem, setCreatingPortfolioItem] = useState(false);
+  const [portfolioItemData, setPortfolioItemData] = useState<{
+    title: string;
+    description: string;
+  }>({ title: "", description: "" });
+
   // Estados para postagem de demanda
   const [newDemand, setNewDemand] = useState<{
     title: string;
@@ -485,193 +504,231 @@ export default function Profile() {
     }
   };
 
-  // Função para obter URL da imagem pelo image_id
+  // Função para obter URL da imagem
   const getImageUrl = (imageId: number) => {
     const image = images.find(img => img.id === imageId);
-      if (image?.image_path) {
-        const baseUrl = "https://zameed-backend.onrender.com";
-        const imagePath = image.image_path.replace(/^uploads\//, "");
-        const imageUrl = `${baseUrl}/uploads/${imagePath}`;
-        return imageUrl;
+    return image ? image.image_url : null;
+  };
+
+  // Funções do modal do portfólio
+  const openPortfolioModal = (item: PortfolioItem) => {
+    setSelectedPortfolioItem(item);
+    setIsModalOpen(true);
+  };
+
+  const closePortfolioModal = () => {
+    setSelectedPortfolioItem(null);
+    setIsModalOpen(false);
+  };
+
+  // Função para lidar com mudança de arquivo
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+    }
+  };
+
+  // Função para upload de imagem
+  const handleUploadImage = async () => {
+    if (!selectedFile || !user) return;
+
+    setUploadingImage(true);
+    try {
+      const formData = new FormData();
+      formData.append('image', selectedFile);
+      formData.append('user_id', user.id.toString());
+
+      const res = await apiRequest("POST", "/upload/image", formData, {
+        'Content-Type': 'multipart/form-data'
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `Status ${res.status}`);
       }
-      return "";
-    };
 
-    // Funções do modal do portfólio
-    const openPortfolioModal = (item: PortfolioItem) => {
-      setSelectedPortfolioItem(item);
-      setIsModalOpen(true);
-    };
+      const result = await res.json();
+      setUploadedImageId(result.image.id);
+      setUploadedImageUrl(result.image.image_url);
+      
+      toast({
+        title: "Sucesso",
+        description: "Imagem enviada com sucesso!",
+      });
 
-    const closePortfolioModal = () => {
-      setSelectedPortfolioItem(null);
-      setIsModalOpen(false);
-    };
+      // Fechar modal de upload e abrir modal de criação de item
+      setIsUploadingImage(false);
+      setIsCreatingPortfolioItem(true);
+    } catch (err: any) {
+      toast({
+        title: "Erro ao enviar imagem",
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingImage(false);
+    }
+  };
 
-    const handleDeletePortfolioItem = async (id: number) => {
-      try {
-        const res = await apiRequest("DELETE", `/portfolio/${id}`);
-        if (!res.ok) {
-          throw new Error("Erro ao deletar item do portfólio");
-        }
-        toast({
-          title: "Sucesso",
-          description: "Item removido do portfólio com sucesso!"
-        });
-        closePortfolioModal();
-        await loadPortfolio();
-      } catch (err: any) {
-        toast({
-          title: "Erro",
-          description: err.message,
-          variant: "destructive"
-        });
+  // Função para criar item do portfólio
+  const handleCreatePortfolioItem = async () => {
+    if (!user || !uploadedImageId || !portfolioItemData.title || !portfolioItemData.description) {
+      toast({
+        title: "Campos incompletos",
+        description: "Por favor, preencha o título e a descrição.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCreatingPortfolioItem(true);
+    try {
+      const payload = {
+        image_id: uploadedImageId,
+        user_id: user.id,
+        title: portfolioItemData.title,
+        description: portfolioItemData.description,
+      };
+
+      const res = await apiRequest("POST", "/portfolio", payload);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `Status ${res.status}`);
       }
-    };
 
-    // Funções de criação de serviço
-    const handleCreateService = async () => {
-      if (!user || user.type !== "prestador") return;
-      if (!newService.title || !newService.description || !newService.price) {
-        toast({
-          title: "Campos incompletos",
-          description: "Por favor, preencha todos os campos do serviço.",
-          variant: "destructive",
-        });
+      toast({
+        title: "Sucesso",
+        description: "Item de destaque criado com sucesso!",
+      });
+
+      // Resetar estados
+      setIsCreatingPortfolioItem(false);
+      setUploadedImageId(null);
+      setUploadedImageUrl(null);
+      setSelectedFile(null);
+      setPortfolioItemData({ title: "", description: "" });
+
+      // Recarregar portfólio
+      loadPortfolio();
+    } catch (err: any) {
+      toast({
+        title: "Erro ao criar item de destaque",
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setCreatingPortfolioItem(false);
+    }
+  };
+
+  // Função para criar serviço
+  const handleCreateService = async () => {
+    if (!user || !newService.title || !newService.description || !newService.price) {
+      toast({
+        title: "Campos incompletos",
+        description: "Por favor, preencha todos os campos do serviço.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCreatingService(true);
+    try {
+      const payload = {
+        title: newService.title,
+        description: newService.description,
+        price: parseFloat(newService.price),
+        user_id: user.id,
+      };
+
+      const res = await apiRequest("POST", "/servicesfreelancer", payload);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `Status ${res.status}`);
+      }
+
+      toast({
+        title: "Sucesso",
+        description: "Serviço criado com sucesso!",
+      });
+
+      setNewService({ title: "", description: "", price: "" });
+      setIsCreating(false);
+      loadServices();
+    } catch (err: any) {
+      toast({
+        title: "Erro ao criar serviço",
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setCreatingService(false);
+    }
+  };
+
+  // Função para iniciar edição de campo
+  const startEditField = (key: FieldKey, currentValue: string) => {
+    setEditingField(key);
+    setDraftValue(currentValue === "Não informado" ? "" : currentValue);
+  };
+
+  // Função para salvar campo editado
+  const saveField = async (key: FieldKey) => {
+    if (!user) return;
+
+    try {
+      let payload: any = {};
+      let endpoint = "";
+
+      if (key === "name" || key === "experience") {
+        payload = { [key]: draftValue };
+        endpoint = `/users/${user.id}`;
+      } else if (key === "cpf" || key === "cnpj") {
+        setPersonalData(prev => ({ ...prev, [key]: draftValue }));
+        setEditingField(null);
         return;
+      } else if (key === "cep") {
+        await fetchAddress(draftValue);
+        setEditingField(null);
+        return;
+      } else if (key === "profession" || key === "about") {
+        if (!providerData) return;
+        payload = { [key]: draftValue };
+        endpoint = `/providers/${providerData.provider_id}`;
       }
 
-      setCreatingService(true);
-      try {
-        const res = await apiRequest("POST", "/servicesfreelancer", newService);
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.message || `Status ${res.status}`);
-        }
-        toast({
-          title: "Sucesso",
-          description: "Serviço criado com sucesso!",
-        });
-        setNewService({ title: "", description: "", price: "" });
-        setIsCreating(false);
-        await loadServices();
-      } catch (err: any) {
-        toast({
-          title: "Erro ao criar serviço",
-          description: err.message,
-          variant: "destructive",
-        });
-      } finally {
-        setCreatingService(false);
+      const res = await apiRequest("PUT", endpoint, payload);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `Status ${res.status}`);
       }
-    };
 
-    // Edição de campo de perfil
-    const startEditField = (key: FieldKey, current: string) => {
-      setEditingField(key);
-      if (key === "cpf" || key === "cnpj" || key === "cep") {
-        // Para campos com máscara, usar o valor sem formatação
-        setDraftValue(current === "Não informado" ? "" : current);
-      } else {
-        setDraftValue(current === "Não informado" || current === "Conte um pouco sobre você..." ? "" : current);
+      toast({
+        title: "Sucesso",
+        description: "Campo atualizado com sucesso!",
+      });
+
+      // Atualizar dados locais
+      if (key === "profession" || key === "about") {
+        setProviderData(prev => prev ? { ...prev, [key]: draftValue } : null);
       }
-    };
-    
-    const cancelEditField = () => {
+
       setEditingField(null);
-    };
-    
-    const saveField = async () => {
-      if (!editingField || !user) return;
-      try {
-        if (editingField === "cpf") {
-          setPersonalData(prev => ({ ...prev, cpf: draftValue }));
-          setEditingField(null);
-          toast({ title: "Sucesso", description: "CPF atualizado!" });
-        } else if (editingField === "cnpj") {
-          setPersonalData(prev => ({ ...prev, cnpj: draftValue }));
-          setEditingField(null);
-          toast({ title: "Sucesso", description: "CNPJ atualizado!" });
-        } else if (editingField === "cep") {
-          const cleanCep = draftValue.replace(/\D/g, "");
-          if (cleanCep.length === 8) {
-            await fetchAddress(cleanCep);
-          } else {
-            setAddressData(prev => ({ ...prev, cep: formatCEP(draftValue) }));
-          }
-          setEditingField(null);
-        } else if (editingField === "numero") {
-          setAddressData(prev => ({ ...prev, numero: draftValue }));
-          setEditingField(null);
-          toast({ title: "Sucesso", description: "Número atualizado!" });
-        } else if (editingField === "name") {
-          // Atualizar nome do usuário via PUT /users/{id}
-          const payload = { name: draftValue };
-          const res = await apiRequest("PUT", `/users/${user.id}`, payload);
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.message || `Status ${res.status}`);
-          }
-          const data = await res.json();
-          console.log("User updated:", data);
-          toast({ title: "Sucesso", description: "Nome atualizado com sucesso!" });
-          setEditingField(null);
-        } else if (editingField === "profession" || editingField === "about") {
-          // Atualizar dados do provider via PUT /providers/{id}
-          if (!providerData) {
-            throw new Error("Dados do provider não encontrados");
-          }
-          
-          const payload = { ...providerData, [editingField]: draftValue };
-          const res = await apiRequest("PUT", `/providers/${providerData.provider_id}`, payload);
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.message || `Status ${res.status}`);
-          }
-          const data = await res.json();
-          console.log("Provider updated:", data);
-          
-          // Atualizar estado local do provider
-          setProviderData(prev => prev ? { ...prev, [editingField]: draftValue } : null);
-          
-          toast({ title: "Sucesso", description: "Perfil atualizado com sucesso!" });
-          setEditingField(null);
-        } else {
-          // Para outros campos, manter a lógica original
-          const payload: any = {};
-          payload[editingField] = draftValue;
-          const res = await apiRequest("PUT", `/users/${user.id}`, payload);
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.message || `Status ${res.status}`);
-          }
-          const data = await res.json();
-          console.log(data);
-          toast({ title: "Sucesso", description: "Perfil atualizado com sucesso!" });
-          setEditingField(null);
-        }
-      } catch (err: any) {
-        toast({
-          title: "Erro",
-          description: err.message,
-          variant: "destructive",
-        });
-      }
-    };
+    } catch (err: any) {
+      toast({
+        title: "Erro ao salvar",
+        description: err.message,
+        variant: "destructive",
+      });
+    }
+  };
 
   if (!user) {
     return (
       <AplicationLayout>
-        <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 flex items-center justify-center">
-          <div className="text-center space-y-6 bg-white/80 backdrop-blur-sm p-8 rounded-3xl border border-white/20 shadow-xl">
-            <div className="w-20 h-20 bg-gradient-to-br from-orange-100 to-amber-200 rounded-full flex items-center justify-center mx-auto">
-              <Loader2 className="h-10 w-10 text-orange-500 animate-spin" />
-            </div>
-            <div className="space-y-2">
-              <h3 className="text-xl font-semibold text-slate-700">Carregando perfil...</h3>
-              <p className="text-slate-500">Aguarde enquanto carregamos suas informações.</p>
-            </div>
-          </div>
+        <div className="flex items-center justify-center min-h-screen">
+          <Loader2 className="w-8 h-8 animate-spin" />
         </div>
       </AplicationLayout>
     );
@@ -679,138 +736,87 @@ export default function Profile() {
 
   return (
     <AplicationLayout>
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-8">
-          <Card className="relative overflow-hidden shadow-2xl  rounded-2xl">
-            <div className="absolute inset-0 bg-amber-600 " />
-            
-            <CardContent className="relative p-6 sm:p-8 lg:p-12 text-white">
-              <div className="flex flex-col lg:flex-row items-center lg:items-start gap-6 lg:gap-8">
-                <Avatar className="w-32 h-32 sm:w-40 sm:h-40">
-                  <AvatarFallback className="bg-white/20 backdrop-blur-sm text-white text-4xl sm:text-5xl font-bold">
-                    {user.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 p-4 sm:p-6 lg:p-8">
+        <div className="max-w-4xl mx-auto space-y-8">
+          {/* Header do Perfil */}
+          <Card className="shadow-xl border-0 rounded-3xl bg-white/80 backdrop-blur-sm overflow-hidden">
+            <div className="relative">
+              <div className="h-32 bg-gradient-to-r from-orange-400 via-amber-500 to-yellow-400"></div>
+              <div className="absolute -bottom-16 left-8">
+                <Avatar className="w-32 h-32 border-4 border-white shadow-lg">
+                  <AvatarImage src={user.avatar} alt={user.name} />
+                  <AvatarFallback className="text-2xl font-bold bg-gradient-to-br from-orange-500 to-amber-600 text-white">
+                    {user.name.charAt(0).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
-
-                <div className="flex-1 text-center lg:text-left space-y-4 min-w-0">
-                  <div>
-                    <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-2 break-words">{user.name}</h1>
-                    <p className="text-lg sm:text-xl lg:text-2xl text-white/90 font-medium break-words">
-                      {user.type === "prestador" && providerData ? providerData.profession || "Prestador de Serviços" : "Usuário"}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap justify-center lg:justify-start gap-2 sm:gap-3">
-                    <Badge className="bg-white/20 backdrop-blur-sm text-white border-white/30 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium">
-                      <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
-                      {completionRate}% completo
+              </div>
+            </div>
+            <CardContent className="pt-20 pb-8">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <h1 className="text-3xl font-bold text-slate-800">{user.name}</h1>
+                  <p className="text-slate-600 mt-1">
+                    {user.type === "prestador" ? "Prestador de Serviços" : "Contratante"}
+                  </p>
+                  {user.type === "prestador" && providerData && (
+                    <Badge variant="secondary" className="mt-2">
+                      {providerData.profession}
                     </Badge>
-                    {user.type === "prestador" && providerData && (
-                      <>
-                        <Badge className="bg-white/20 backdrop-blur-sm text-white border-white/30 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium">
-                          <Star className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 sm:mr-2 fill-current" />
-                          {providerData.rating_mid} estrelas
-                        </Badge>
-                        <Badge className="bg-white/20 backdrop-blur-sm text-white border-white/30 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium">
-                          <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
-                          {providerData.views_profile} visualizações
-                        </Badge>
-                      </>
-                    )}
+                  )}
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-orange-600">{completionRate}%</div>
+                    <div className="text-sm text-slate-600">Perfil Completo</div>
+                    <Progress value={completionRate} className="w-24 mt-1" />
                   </div>
+                  <Button
+                    onClick={logout}
+                    variant="outline"
+                    className="border-red-200 text-red-600 hover:bg-red-50"
+                  >
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Sair
+                  </Button>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Progress bar */}
-          <Card className="shadow-xl border-0 rounded-3xl bg-white/80 backdrop-blur-sm">
-            <CardContent className="p-6">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-slate-700">Completude do Perfil</h3>
-                  <span className="text-sm font-medium text-slate-600">{completionRate}% completos</span>
-                </div>
-               <Progress value={completionRate} className="w-[60%]" />
-        </div>
-
-        {user.type === "contratante" && (
-          <div className="bg-white p-6 rounded-lg shadow-md mb-6">
-            <h2 className="text-2xl font-bold mb-4">Postar Nova Demanda</h2>
-            <div className="mb-4">
-              <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="demandTitle">
-                Título da Demanda:
-              </label>
-              <input
-                type="text"
-                id="demandTitle"
-                className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                value={newDemand.title}
-                onChange={(e) => setNewDemand({ ...newDemand, title: e.target.value })}
-              />
-            </div>
-            <div className="mb-4">
-              <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="demandDescription">
-                Descrição:
-              </label>
-              <textarea
-                id="demandDescription"
-                className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                value={newDemand.description}
-                onChange={(e) => setNewDemand({ ...newDemand, description: e.target.value })}
-              ></textarea>
-            </div>
-            <button
-              className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-              onClick={handlePostDemand}
-              disabled={postingDemand}
-            >
-              {postingDemand ? 'Postando...' : 'Postar Demanda'}
-            </button>
-          </div>
-        )}
-            </CardContent>
-          </Card>
-
-          {/* Seção de Postar Demanda (apenas para não-prestadores) */}
+          {/* Seção de Postagem de Demanda (apenas para não-prestadores) */}
           {user?.type !== "prestador" && (
-            <Card className="w-full max-w-4xl mx-auto mb-8 shadow-lg rounded-lg">
-              <CardHeader>
-                <CardTitle className="text-2xl font-bold text-orange-600 flex items-center">
-                  <TrendingUp className="mr-2" /> Postar Nova Demanda
+            <Card className="shadow-xl border-0 rounded-3xl bg-white/80 backdrop-blur-sm">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-3 text-xl sm:text-2xl">
+                  <div className="p-2 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl">
+                    <Plus className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                  </div>
+                  Postar Nova Demanda
                 </CardTitle>
-                <CardDescription>Descreva o serviço que você precisa e encontre os melhores profissionais.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div>
-                  <label htmlFor="demand-title" className="block text-sm font-medium text-gray-700 mb-1">Título da Demanda</label>
-                  <Input
-                    id="demand-title"
-                    placeholder="Ex: Projeto de Interiores para Apartamento"
-                    value={newDemand.title}
-                    onChange={(e) => setNewDemand({ ...newDemand, title: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="demand-description" className="block text-sm font-medium text-gray-700 mb-1">Descrição Detalhada</label>
-                  <Textarea
-                    id="demand-description"
-                    placeholder="Descreva o escopo, requisitos, prazos e qualquer detalhe importante."
-                    value={newDemand.description}
-                    onChange={(e) => setNewDemand({ ...newDemand, description: e.target.value })}
-                    rows={5}
-                  />
-                </div>
+                <Input
+                  placeholder="Título da demanda"
+                  value={newDemand.title}
+                  onChange={(e) => setNewDemand({ ...newDemand, title: e.target.value })}
+                />
+                <Textarea
+                  placeholder="Descrição detalhada da demanda"
+                  value={newDemand.description}
+                  onChange={(e) => setNewDemand({ ...newDemand, description: e.target.value })}
+                  rows={4}
+                />
                 <Button
                   onClick={handlePostDemand}
                   disabled={postingDemand}
-                  className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-2 rounded-md transition-colors"
+                  className="w-full bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-semibold py-2 rounded-xl shadow-lg transition-all duration-300"
                 >
                   {postingDemand ? (
-                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Postando Demanda...</>
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
                   ) : (
-                    "Postar Demanda"
+                    <Plus className="w-4 h-4 mr-2" />
                   )}
+                  {postingDemand ? 'Postando...' : 'Postar Demanda'}
                 </Button>
               </CardContent>
             </Card>
@@ -821,17 +827,17 @@ export default function Profile() {
             <DemandsManager userId={user?.id} />
           )}
 
-          {/* Seção de Portfólio (apenas para prestadores) */}
+          {/* Seções específicas para prestadores */}
           {user.type === "prestador" && (
             <>
-              {/* Seção de Portfólio */}
+              {/* Seção de Destaques (Portfólio) */}
               <Card className="shadow-xl border-0 rounded-3xl bg-white/80 backdrop-blur-sm">
                 <CardHeader className="pb-4">
                   <CardTitle className="flex items-center gap-3 text-xl sm:text-2xl">
                     <div className="p-2 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl">
                       <Grid3X3 className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                     </div>
-                   Meus destaques 
+                    Meus Destaques
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -844,7 +850,7 @@ export default function Profile() {
                       {portfolio.length === 0 ? (
                         <div className="text-center py-8 text-slate-500">
                           <ImageIcon className="w-12 h-12 mx-auto mb-4" />
-                          <p>Nenhum item no portfólio ainda.</p>
+                          <p>Nenhum item nos destaques ainda.</p>
                         </div>
                       ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -873,6 +879,12 @@ export default function Profile() {
                           ))}
                         </div>
                       )}
+                      <Button
+                        onClick={() => setIsUploadingImage(true)}
+                        className="w-full bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-semibold py-2 rounded-xl shadow-lg transition-all duration-300"
+                      >
+                        <Plus className="w-4 h-4 mr-2" /> Adicionar Novo Destaque
+                      </Button>
                     </div>
                   )}
                 </CardContent>
@@ -1015,7 +1027,7 @@ export default function Profile() {
                       )}
                       <Button
                         size="sm"
-                        onClick={saveField}
+                        onClick={() => saveField(field.key)}
                         className="bg-green-600 hover:bg-green-700 text-white"
                       >
                         <Check className="w-4 h-4" />
@@ -1023,14 +1035,16 @@ export default function Profile() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={cancelEditField}
-                        className="border-red-300 text-red-600 hover:bg-red-50"
+                        onClick={() => setEditingField(null)}
+                        className="border-red-200 text-red-600 hover:bg-red-50"
                       >
                         <X className="w-4 h-4" />
                       </Button>
                     </div>
                   ) : (
-                    <p className="text-slate-600 ml-8">{field.value}</p>
+                    <div className="ml-8 p-3 bg-slate-50 rounded-lg">
+                      <span className="text-slate-700">{field.value}</span>
+                    </div>
                   )}
                   
                   {index < profileFields.length - 1 && <Separator />}
@@ -1040,15 +1054,76 @@ export default function Profile() {
           </Card>
         </div>
 
+        {/* Modal de Upload de Imagem */}
+        {isUploadingImage && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <Card className="w-full max-w-md p-6">
+              <CardTitle className="mb-4">Upload de Imagem</CardTitle>
+              <Input type="file" accept="image/*" onChange={handleImageChange} />
+              <Button 
+                onClick={handleUploadImage} 
+                disabled={uploadingImage || !selectedFile}
+                className="mt-4 w-full"
+              >
+                {uploadingImage ? "Enviando..." : "Upload Imagem"}
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => setIsUploadingImage(false)} 
+                className="mt-2 w-full"
+              >
+                Cancelar
+              </Button>
+            </Card>
+          </div>
+        )}
+
+        {/* Modal de Criação de Item do Portfólio */}
+        {isCreatingPortfolioItem && uploadedImageId && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <Card className="w-full max-w-md p-6">
+              <CardTitle className="mb-4">Criar Item de Destaque</CardTitle>
+              <Input
+                placeholder="Título do Destaque"
+                value={portfolioItemData.title}
+                onChange={(e) => setPortfolioItemData({ ...portfolioItemData, title: e.target.value })}
+                className="mb-2"
+              />
+              <Textarea
+                placeholder="Descrição do Destaque"
+                value={portfolioItemData.description}
+                onChange={(e) => setPortfolioItemData({ ...portfolioItemData, description: e.target.value })}
+                className="mb-4"
+              />
+              <Button 
+                onClick={handleCreatePortfolioItem} 
+                disabled={creatingPortfolioItem}
+                className="w-full"
+              >
+                {creatingPortfolioItem ? "Criando..." : "Salvar Destaque"}
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => setIsCreatingPortfolioItem(false)} 
+                className="mt-2 w-full"
+              >
+                Cancelar
+              </Button>
+            </Card>
+          </div>
+        )}
+
         {/* Modal do Portfólio */}
         {isModalOpen && selectedPortfolioItem && (
-          <PortfolioModal 
-            isOpen={isModalOpen}
+          <PortfolioModal
             item={selectedPortfolioItem}
-            userName={user?.name || ""}
             imageUrl={getImageUrl(selectedPortfolioItem.image_id)}
             onClose={closePortfolioModal}
-            onDelete={handleDeletePortfolioItem}
+            canDelete={true}
+            onDelete={() => {
+              closePortfolioModal();
+              loadPortfolio();
+            }}
           />
         )}
       </div>

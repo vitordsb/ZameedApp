@@ -127,7 +127,6 @@ interface DemandsResponse {
   success: boolean;
 }
 
-// Componente UserBanner melhorado com responsividade
 const UserBanner = ({ userId, className = '' }: { userId: number; className?: string }) => {
   const [imageUrl, setImageUrl] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -206,7 +205,6 @@ const UserBanner = ({ userId, className = '' }: { userId: number; className?: st
   );
 };
 
-// Componente Avatar melhorado com responsividade
 const UserAvatar = ({ userId, className = '', size = 'md' }: { userId: number; className?: string; size?: 'sm' | 'md' | 'lg' | 'xl' }) => {
   const [imageUrl, setImageUrl] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -303,7 +301,6 @@ const servicesList = [
   "Design Comercial",
 ];
 
-// Carrossel de imagens para o banner superior
 const carouselImages = [
   {
     src: "/bannerImages/01.jpg",
@@ -333,7 +330,6 @@ export default function SocialFeed() {
 
   const { startConversationAndNavigate } = useMessaging();
 
-  // Carrossel automático
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % carouselImages.length);
@@ -364,18 +360,15 @@ export default function SocialFeed() {
     }
   };
 
-  // Função para gerar o link correto do perfil baseado no tipo de usuário
   const getProfileLink = (item: { user: User; provider: Provider | null }) => {
     if (item.user.type === "contratante") {
       return `/user/${item.user.id}`;
     } else if (item.user.type === "prestador" && item.provider) {
       return `/providers/${item.provider.provider_id}`;
     }
-    // Fallback para casos inesperados
     return `/user/${item.user.id}`;
   };
 
-  // Queries para buscar dados
   const { data: usersRes, isLoading: loadingAllUsers, isError: errAllUsers } =
     useQuery<UsersResponse>({
       queryKey: ["allUsers"],
@@ -475,28 +468,26 @@ export default function SocialFeed() {
     };
   }, [allProvidersData, allClientsData, currentUser, search, serviceFilter, locationFilter]);
 
-  // Query para buscar serviços freelancer
   const { data: servicesRes, isLoading: loadingServices, isError: errServices } =
     useQuery<FreelancerServicesResponse>({
       queryKey: ["servicesFreelancer"],
       queryFn: async () => {
         const res = await apiRequest("GET", "/servicesfreelancer/getall");
         if (!res.ok) throw new Error("Erro ao buscar serviços freelancer");
-        return res.json();
+        return await res.json();
       },
-      staleTime: 5 * 60 * 100,
+      staleTime: 5 * 60 * 1000,
     });
 
-  // Query para buscar demandas
   const { data: demandsRes, isLoading: loadingDemands, isError: errDemands } =
     useQuery<DemandsResponse>({
       queryKey: ["demands"],
       queryFn: async () => {
         const res = await apiRequest("GET", "/demands/getall");
         if (!res.ok) throw new Error("Erro ao buscar demandas");
-        return res.json();
+        return await res.json();
       },
-      staleTime: 5 * 60 * 100,
+      staleTime: 5 * 60 * 1000,
     });
 
   const recentServices = useMemo(() => {
@@ -505,15 +496,13 @@ export default function SocialFeed() {
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(0, 3);
   }, [servicesRes]);
-  console.log(recentServices);
 
   const recentDemands = useMemo(() => {
-    if (!demandsRes?.demands) return [];
-    return demandsRes.demands
+    if (!demandsRes?.demand) return [];
+    return demandsRes.demand
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(0, 3);
   }, [demandsRes]);
-  console.log(recentDemands);
 
   const nextSlide = () => {
     setCurrentSlide((prev) => (prev + 1) % carouselImages.length);
@@ -538,44 +527,6 @@ export default function SocialFeed() {
       style: "currency",
       currency: "BRL"
     }).format(price);
-  };
-
-  const getServiceCategory = (title: string, description: string) => {
-    const titleLower = title.toLowerCase();
-    const descLower = description.toLowerCase();
-    
-    if (titleLower.includes("3d") || titleLower.includes("render") || descLower.includes("render")) {
-      return "Renderização 3D";
-    } else if (titleLower.includes("interior") || descLower.includes("interior")) {
-      return "Design de Interiores";
-    } else if (titleLower.includes("comercial") || descLower.includes("comercial") || descLower.includes("loja")) {
-      return "Design Comercial";
-    } else if (titleLower.includes("consultoria") || descLower.includes("consultoria")) {
-      return "Consultoria";
-    } else if (titleLower.includes("jardim") || titleLower.includes("paisag") || descLower.includes("paisag")) {
-      return "Paisagismo";
-    } else {
-      return "Arquitetura";
-    }
-  };
-
-  const getDemandCategory = (title: string, description: string) => {
-    const titleLower = title.toLowerCase();
-    const descLower = description.toLowerCase();
-    
-    if (titleLower.includes("3d") || titleLower.includes("render") || descLower.includes("render")) {
-      return "Renderização 3D";
-    } else if (titleLower.includes("interior") || descLower.includes("interior")) {
-      return "Design de Interiores";
-    } else if (titleLower.includes("comercial") || descLower.includes("comercial") || descLower.includes("loja")) {
-      return "Design Comercial";
-    } else if (titleLower.includes("consultoria") || descLower.includes("consultoria")) {
-      return "Consultoria";
-    } else if (titleLower.includes("jardim") || titleLower.includes("paisag") || descLower.includes("paisag")) {
-      return "Paisagismo";
-    } else {
-      return "Arquitetura";
-    }
   };
 
   if (loadingAllUsers || loadingProv) {
@@ -623,7 +574,6 @@ export default function SocialFeed() {
   return (
     <ApplicationLayout>
       <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50">
-        {/* Banner Hero com Carrossel */}
         <div className="relative h-64 sm:h-80 lg:h-96 overflow-hidden">
           {carouselImages.map((image, index) => (
             <div
@@ -693,9 +643,7 @@ export default function SocialFeed() {
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="flex flex-col lg:flex-row gap-8">
-            {/* Sidebar esquerda */}
             <div className="lg:w-80 space-y-6">
-              {/* Filtros de pesquisa */}
               <Card className="border-0 shadow-lg bg-white/80 backdrop-blur-sm">
                 <CardHeader className="pb-4">
                   <CardTitle className="flex items-center gap-2 text-lg">
@@ -756,7 +704,8 @@ export default function SocialFeed() {
                 </CardContent>
               </Card>
 
-              {/* Últimas ofertas */}
+              
+              {currentUser?.type === "contratante" && (
               <Card className="border-0 shadow-lg bg-white/80 backdrop-blur-sm">
                 <CardHeader className="pb-4">
                   <CardTitle className="flex items-center gap-2 text-lg">
@@ -786,22 +735,20 @@ export default function SocialFeed() {
                           <span className="text-sm font-bold text-green-600">
                             {formatPrice(service.price)}
                           </span>
-                          <Badge variant="secondary" className="text-xs">
-                            {getServiceCategory(service.title, service.description)}
-                          </Badge>
                         </div>
                       </div>
                     ))
                   )}
                 </CardContent>
               </Card>
+              )}
 
-              {/* Demandas recentes */}
-              <Card className="border-0 shadow-lg bg-white/80 backdrop-blur-sm">
+              {currentUser?.type === "prestador" && (
+              <Card className="border-0 shadow-lg bg-white/80 backdrop-amber-sm">
                 <CardHeader className="pb-4">
                   <CardTitle className="flex items-center gap-2 text-lg">
                     <TrendingUp className="h-5 w-5 text-amber-600" />
-                    Demandas Recentes
+                  Últimas Demandas 
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -815,7 +762,7 @@ export default function SocialFeed() {
                     </p>
                   ) : (
                     recentDemands.map((demand) => (
-                      <div key={demand.id_demand} className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-100">
+                      <div key={demand.id_demand} className="p-3 bg-gradient-to-r from-amber-50 to-orange-50 rounded-lg border border-amber-100">
                         <h4 className="font-semibold text-sm text-gray-900 mb-1">
                           {demand.title}
                         </h4>
@@ -824,17 +771,15 @@ export default function SocialFeed() {
                         </p>
                         <div className="flex items-center justify-between">
                           <span className="text-sm font-bold text-green-600">
-                            {formatPrice(demand.budget)}
+                            {formatPrice(demand.price)}
                           </span>
-                          <Badge variant="secondary" className="text-xs">
-                            {getDemandCategory(demand.title, demand.description)}
-                          </Badge>
                         </div>
                       </div>
                     ))
                   )}
                 </CardContent>
               </Card>
+              )}
             </div>
 
             {/* Conteúdo principal */}
@@ -866,7 +811,7 @@ export default function SocialFeed() {
                   </CardContent>
                 </Card>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-3 gap-4 sm:gap-6">
                   {displayList.map((item) => (
                     <motion.div
                       key={item.user.id}
@@ -875,12 +820,8 @@ export default function SocialFeed() {
                       transition={{ duration: 0.3 }}
                     >
                       <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 overflow-hidden">
-                        {/* Banner do usuário */}
                         <UserBanner userId={item.user.id} />
-                        
-                        {/* Conteúdo do perfil */}
-                        <CardContent className="relative p-4 sm:p-6">
-                          {/* Avatar centralizado */}
+                        <CardContent className="relative p-4">
                           <div className="flex justify-center -mt-10 mb-4">
                             <UserAvatar 
                               userId={item.user.id} 
@@ -889,7 +830,6 @@ export default function SocialFeed() {
                             />
                           </div>
                           
-                          {/* Informações centralizadas */}
                           <div className="text-center space-y-3">
                             <div>
                               <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-1">
@@ -902,7 +842,6 @@ export default function SocialFeed() {
                                     {item.provider.profession || "Ainda não informou"}
                                   </p>
                                   
-                                  {/* Rating centralizado */}
                                   <div className="flex items-center justify-center gap-1 mb-3">
                                     <div className="flex">
                                       {[...Array(5)].map((_, i) => (

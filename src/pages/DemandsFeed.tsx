@@ -180,69 +180,7 @@ export default function DemandsPage() {
   return (
     <ApplicationLayout>
       <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 scroll-smooth">
-        {/* Header Section */}
-        <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 sticky top-0 z-10">
-          <div className="max-w-7xl mx-auto px-6 py-8">
-            <div className="text-center space-y-6 mb-8">
-              <p className="text-xl text-slate-600 max-w-3xl mx-auto leading-relaxed">
-                Descubra oportunidades de trabalho e conecte-se com clientes que precisam dos seus serviços
-              </p>
-              <div className="flex items-center justify-center space-x-6 text-sm text-slate-500">
-                <div className="flex items-center space-x-2">
-                  <TrendingUp className="h-4 w-4 text-green-500" />
-                  <span>+{demands.length} demandas ativas</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Award className="h-4 w-4 text-amber-500" />
-                  <span>Clientes verificados</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Search and Filters */}
-            <div className="flex flex-col lg:flex-row gap-4 items-center">
-              <div className="relative flex-1 max-w-lg">
-                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 h-5 w-5" />
-                <Input
-                  placeholder="Buscar por demandas, projetos ou clientes..."
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setPage(1);
-                  }}
-                  className="pl-12 h-14 bg-white/80 backdrop-blur-sm border-white/30 focus:border-amber-400 focus:ring-amber-300 rounded-2xl shadow-lg text-lg transition-all duration-300 focus:scale-105 focus:shadow-xl"
-                />
-              </div>
-              
-              <div className="flex gap-3">
-                <Button
-                  onClick={() => {
-                    const nextSort = sortBy === "newest" ? "priceAsc" : sortBy === "priceAsc" ? "priceDesc" : "newest";
-                    setSortBy(nextSort);
-                  }}
-                  className="h-14 px-6 bg-white/80 backdrop-blur-sm border-white/30 hover:border-amber-400 rounded-2xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl focus:ring-2 focus:ring-amber-300"
-                  variant="outline"
-                >
-                  <Filter className="h-5 w-5 mr-2" />
-                  {getSortLabel()}
-                  {sortBy === "priceAsc" ? <SortAsc className="h-4 w-4 ml-2" /> : <SortDesc className="h-4 w-4 ml-2" />}
-                </Button>
-                
-                <Button 
-                  onClick={() => setViewMode((v) => (v === "grid" ? "list" : "grid"))}
-                  className="h-14 px-4 bg-white/80 backdrop-blur-sm border-white/30 hover:border-amber-400 rounded-2xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl focus:ring-2 focus:ring-amber-300"
-                  variant="outline"
-                >
-                  {viewMode === "grid" ? <List className="h-5 w-5" /> : <Grid3X3 className="h-5 w-5" />}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Content Section */}
         <div className="max-w-7xl mx-auto px-6 py-8">
-          {/* Results Info */}
           <div className="mb-8">
             <div className="flex items-center justify-between">
               <p className="text-lg text-slate-600">

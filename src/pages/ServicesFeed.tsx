@@ -95,11 +95,7 @@ export default function ServicesFeed() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [page, setPage] = useState(1);
   const perPage = 6;
-  
-  // Hook para acessar dados do usuário logado
   const { user: currentUser } = useAuth();
-
-  // Query para buscar todos os serviços
   const { 
     data: servicesData, 
     isLoading: loadingServices, 
@@ -117,7 +113,6 @@ export default function ServicesFeed() {
     staleTime: 5 * 60 * 1000, // 5 minutos
   });
 
-  // Query para buscar informações dos usuários (executada apenas quando temos serviços)
   const { 
     data: enrichedServices, 
     isLoading: loadingUsers,
@@ -126,21 +121,16 @@ export default function ServicesFeed() {
     queryKey: ["enriched-services", servicesData?.servicesFreelancer, currentUser?.id],
     queryFn: async () => {
       if (!servicesData?.servicesFreelancer) return [];
-      
       const services = servicesData.servicesFreelancer;
       const enriched: EnrichedService[] = [];
-
-      // Buscar informações do usuário para cada serviço
       for (const service of services) {
         try {
           let userData: User | null = null;
           
-          // CORREÇÃO: Se o serviço foi postado pelo usuário logado, usar os dados do usuário logado
           if (currentUser && service.ServiceProvider.user_id === currentUser.id) {
             userData = currentUser;
             console.log(`Usando dados do usuário logado para serviço ${service.id_serviceFreelancer}`);
           } else {
-            // Caso contrário, buscar na API
             try {
               const userRes = await apiRequest("GET", `/users/${service.ServiceProvider.user_id}`);
               if (userRes.ok) {
@@ -163,7 +153,6 @@ export default function ServicesFeed() {
               userType: userData.type,
             });
           } else {
-            // Fallback: usar dados básicos do ServiceProvider se disponível
             enriched.push({
               ...service,
               userName: service.ServiceProvider.profession || "Prestador",
@@ -174,7 +163,6 @@ export default function ServicesFeed() {
           }
         } catch (error) {
           console.error(`Erro geral ao processar usuário ${service.ServiceProvider.user_id}:`, error);
-          // Fallback em caso de erro
           enriched.push({
             ...service,
             userName: service.ServiceProvider.profession || "Prestador",
@@ -298,72 +286,7 @@ export default function ServicesFeed() {
   return (
     <ApplicationLayout>
       <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 scroll-smooth">
-        {/* Header Section */}
-        <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 sticky top-0 z-10">
-          <div className="max-w-7xl mx-auto px-6 py-8">
-            <div className="text-center space-y-6 mb-8">
-              <h1 className="text-4xl md:text-5xl font-bold text-slate-800 mb-4">
-                Serviços Freelancer
-              </h1>
-              <p className="text-xl text-slate-600 max-w-3xl mx-auto leading-relaxed">
-                Conecte-se com profissionais talentosos e encontre soluções personalizadas para suas necessidades
-              </p>
-              <div className="flex items-center justify-center space-x-6 text-sm text-slate-500">
-                <div className="flex items-center space-x-2">
-                  <TrendingUp className="h-4 w-4 text-green-500" />
-                  <span>+{services.length} serviços ativos</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Award className="h-4 w-4 text-orange-500" />
-                  <span>Profissionais verificados</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Search and Filters */}
-            <div className="flex flex-col lg:flex-row gap-4 items-center">
-              <div className="relative flex-1 max-w-lg">
-                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 h-5 w-5" />
-                <Input
-                  placeholder="Buscar por serviços, habilidades ou profissionais..."
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setPage(1);
-                  }}
-                  className="pl-12 h-14 bg-white/80 backdrop-blur-sm border-white/30 focus:border-orange-400 focus:ring-orange-300 rounded-2xl shadow-lg text-lg transition-all duration-300 focus:scale-105 focus:shadow-xl"
-                />
-              </div>
-              
-              <div className="flex gap-3">
-                <Button
-                  onClick={() => {
-                    const nextSort = sortBy === "newest" ? "priceAsc" : sortBy === "priceAsc" ? "priceDesc" : "newest";
-                    setSortBy(nextSort);
-                  }}
-                  className="h-14 px-6 bg-white/80 backdrop-blur-sm border-white/30 hover:border-orange-400 rounded-2xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl focus:ring-2 focus:ring-orange-300"
-                  variant="outline"
-                >
-                  <Filter className="h-5 w-5 mr-2" />
-                  {getSortLabel()}
-                  {sortBy === "priceAsc" ? <SortAsc className="h-4 w-4 ml-2" /> : <SortDesc className="h-4 w-4 ml-2" />}
-                </Button>
-                
-                <Button 
-                  onClick={() => setViewMode((v) => (v === "grid" ? "list" : "grid"))}
-                  className="h-14 px-4 bg-white/80 backdrop-blur-sm border-white/30 hover:border-orange-400 rounded-2xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl focus:ring-2 focus:ring-orange-300"
-                  variant="outline"
-                >
-                  {viewMode === "grid" ? <List className="h-5 w-5" /> : <Grid3X3 className="h-5 w-5" />}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Content Section */}
         <div className="max-w-7xl mx-auto px-6 py-8">
-          {/* Results Info */}
           <div className="mb-8">
             <div className="flex items-center justify-between">
               <p className="text-lg text-slate-600">

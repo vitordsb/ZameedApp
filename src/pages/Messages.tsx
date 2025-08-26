@@ -13,7 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Send, Users, MessageCircle, ArrowLeft, FileText, CheckCircle, XCircle, Plus, Minus, Clock, DollarSign, Eye, List, Info, PaperclipIcon, Calendar } from 'lucide-react';
+import { Send, Users, MessageCircle, ArrowLeft, FileText, CheckCircle, XCircle, Plus, Minus, Clock, DollarSign, Eye, List, Info, PaperclipIcon, Calendar, Upload, Trash2, Edit2, Check, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import AplicationLayout from '@/components/layouts/ApplicationLayout';
@@ -47,12 +47,18 @@ export default function Messages() {
     getStepsForTicket,
     hasActiveTicket,
     updateTicketStatus,
+    updateStep,
+    deleteStep,
+    uploadPDF,
+    markStepCompleted,
+    confirmStepCompletion,
   } = useMessaging(initialPartnerId);
 
   // Estados para modal de proposta
   const [showProposalModal, setShowProposalModal] = useState(false);
   const [proposalSteps, setProposalSteps] = useState([{ title: '', price: 0 }]);
   const [sendingProposal, setSendingProposal] = useState(false);
+  const [contractFile, setContractFile] = useState<File | null>(null);
   
   // Estados para visualização de propostas
   const [showProposalDetails, setShowProposalDetails] = useState(false);
@@ -60,6 +66,10 @@ export default function Messages() {
   const [selectedTicketSteps, setSelectedTicketSteps] = useState<any[]>([]);
   const [loadingSteps, setLoadingSteps] = useState(false);
   const [ticketStepsMap, setTicketStepsMap] = useState<Record<number, any[]>>({});
+  
+  // Estados para gerenciamento de steps
+  const [editingStep, setEditingStep] = useState<number | null>(null);
+  const [editStepData, setEditStepData] = useState({ title: '', price: 0 });
   
   const canCreateProposal = () => {
     // Apenas prestadores podem criar propostas, e não podem criar para outros prestadores
@@ -145,6 +155,25 @@ export default function Messages() {
           bgColor: 'bg-blue-50',
           borderColor: 'border-blue-200'
         };
+      case 'completed':
+      case 'concluido':
+        return {
+          variant: 'default' as const,
+          icon: CheckCircle,
+          label: 'Concluído',
+          color: 'text-green-600',
+          bgColor: 'bg-green-50',
+          borderColor: 'border-green-200'
+        };
+      case 'awaiting_confirmation':
+        return {
+          variant: 'default' as const,
+          icon: Clock,
+          label: 'Aguardando Confirmação',
+          color: 'text-yellow-600',
+          bgColor: 'bg-yellow-50',
+          borderColor: 'border-yellow-200'
+        };
       case 'pending':
       case 'pendente':
       default:
@@ -176,6 +205,19 @@ export default function Messages() {
     setProposalSteps(updated);
   };
 
+  const handleContractFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type === 'application/pdf') {
+      setContractFile(file);
+    } else {
+      toast({
+        title: 'Erro',
+        description: 'Por favor, selecione um arquivo PDF válido.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handleSendProposal = async () => {
     if (!currentConversation || !user || !canCreateProposal()) return;
 
@@ -192,10 +234,11 @@ export default function Messages() {
 
     setSendingProposal(true);
     try {
-      const success = await createProposal(validSteps);
+      const success = await createProposal(validSteps, contractFile || undefined);
       if (success) {
         setShowProposalModal(false);
         setProposalSteps([{ title: '', price: 0 }]);
+        setContractFile(null);
       }
     } finally {
       setSendingProposal(false);
@@ -217,6 +260,45 @@ export default function Messages() {
     } finally {
       setLoadingSteps(false);
     }
+  };
+
+  // NOVAS FUNÇÕES PARA GERENCIAR STEPS
+  const handleEditStep = (step: any) => {
+    setEditingStep(step.id);
+    setEditStepData({ title: step.title, price: step.price });
+  };
+
+  const handleSaveStep = async () => {
+    if (!editingStep) return;
+    
+    const success = await updateStep(editingStep, {
+      title: editStepData.title,
+      price: editStepData.price
+    });
+    
+    if (success) {
+      setEditingStep(null);
+      // Recarregar steps
+      const updatedSteps = await getStepsForTicket(selectedTicketSteps[0]?.ticket_id);
+      setSelectedTicketSteps(updatedSteps);
+    }
+  };
+
+  const handleDeleteStep = async (stepId: number) => {
+    const success = await deleteStep(stepId);
+    if (success) {
+      // Recarregar steps
+      const updatedSteps = await getStepsForTicket(selectedTicketSteps[0]?.ticket_id);
+      setSelectedTicketSteps(updatedSteps);
+    }
+  };
+
+  const handleMarkStepCompleted = async (stepId: number) => {
+    await markStepCompleted(stepId);
+  };
+
+  const handleConfirmStepCompletion = async (stepId: number, ticketId: number) => {
+    await confirmStepCompletion(stepId, ticketId);
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -281,23 +363,23 @@ export default function Messages() {
   const latestProposalTotal = calculateProposalTotal(latestProposalSteps);
   const latestProposalStatusConfig = getStatusConfig(latestProposal?.status);
 
-  // COMPONENTE DE PROPOSTA BASEADO NA IMAGEM
+  // COMPONENTE DE PROPOSTA COMPACTO
   const ProposalCard = ({ ticket, steps, isLatest = false }: { ticket: any, steps: any[], isLatest?: boolean }) => {
     const total = calculateProposalTotal(steps);
     const statusConfig = getStatusConfig(ticket.status);
     const canInteract = user?.type === 'contratante' && ticket.status === 'pending';
 
     return (
-      <div className={`rounded-lg p-4 shadow-md ${isLatest ? 'bg-gradient-to-br from-orange-400 to-amber-500' : 'bg-gradient-to-br from-orange-300 to-amber-400'} text-white relative overflow-hidden`}>
-        {/* Header com ícone de anexo */}
-        <div className="flex items-center justify-between mb-3">
+      <div className={`rounded-lg p-3 shadow-sm border ${isLatest ? 'bg-gradient-to-br from-orange-100 to-amber-100' : 'bg-white'} relative overflow-hidden`}>
+        {/* Header compacto */}
+        <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <div className="bg-white/20 p-1 rounded-md">
-              <PaperclipIcon className="h-4 w-4" />
+            <div className="bg-orange-500 p-1 rounded-md">
+              <PaperclipIcon className="h-3 w-3 text-white" />
             </div>
             <div>
-              <h3 className="text-base font-bold">Proposta de Projeto</h3>
-              <p className="text-orange-100 text-xs">#{ticket.id}</p>
+              <h3 className="text-sm font-bold text-gray-800">Proposta #{ticket.id}</h3>
+              <p className="text-xs text-gray-600">{formatCurrency(total)}</p>
             </div>
           </div>
           <Badge 
@@ -309,97 +391,66 @@ export default function Messages() {
           </Badge>
         </div>
 
-        {/* Valor total destacado */}
-        <div className="mb-4">
-          <p className="text-orange-100 text-xs mb-1">Valor total:</p>
-          <p className="text-2xl font-bold">{formatCurrency(total)}</p>
-        </div>
-
-        {/* Fases */}
-        <div className="mb-4">
-          <p className="text-orange-100 text-xs mb-2">Fases</p>
-          <div className="space-y-1">
-            {steps.slice(0, 3).map((step, index) => (
-              <div key={step.id} className="bg-white/10 rounded-md p-2 backdrop-blur-sm">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium">{step.title}</span>
-                  <span className="text-sm font-bold">{formatCurrency(step.price)}</span>
-                </div>
+        {/* Resumo das fases */}
+        <div className="mb-2">
+          <p className="text-xs text-gray-600 mb-1">{steps.length} fase{steps.length !== 1 ? 's' : ''}</p>
+          <div className="text-xs text-gray-500">
+            {steps.slice(0, 2).map((step, index) => (
+              <div key={step.id} className="truncate">
+                {index + 1}. {step.title}
               </div>
             ))}
-            {steps.length > 3 && (
-              <div className="bg-white/10 rounded-md p-2 backdrop-blur-sm">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium">+{steps.length - 3} Fases</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleViewProposalDetails(ticket.id)}
-                    className="text-white hover:bg-white/20 h-auto p-1 text-xs"
-                  >
-                    Ver mais
-                  </Button>
-                </div>
-              </div>
+            {steps.length > 2 && (
+              <div className="text-gray-400">+{steps.length - 2} mais...</div>
             )}
           </div>
         </div>
 
-        {/* Ações */}
-        <div className="flex gap-2">
+        {/* Ações compactas */}
+        <div className="flex gap-1">
           {canInteract && (
             <>
               <Button
                 onClick={() => updateTicketStatus(ticket.id, 'accepted')}
-                className="flex-1 bg-green-600 hover:bg-green-700 text-white border-0 text-sm"
+                size="sm"
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs h-7"
               >
-                <CheckCircle className="h-4 w-4 mr-1" />
+                <CheckCircle className="h-3 w-3 mr-1" />
                 Aceitar
               </Button>
               <Button
                 onClick={() => updateTicketStatus(ticket.id, 'rejected')}
                 variant="outline"
-                className="flex-1 bg-white/20 border-white/30 text-white hover:bg-white/30 text-sm"
+                size="sm"
+                className="flex-1 text-xs h-7"
               >
-                <XCircle className="h-4 w-4 mr-1" />
+                <XCircle className="h-3 w-3 mr-1" />
                 Rejeitar
               </Button>
             </>
           )}
-          {!canInteract && (
-            <Button
-              onClick={() => handleViewProposalDetails(ticket.id)}
-              className="flex-1 bg-white/20 border-white/30 text-white hover:bg-white/30 text-sm"
-            >
-              <Eye className="h-4 w-4 mr-1" />
-              Ver detalhes
-            </Button>
-          )}
+          <Button
+            onClick={() => handleViewProposalDetails(ticket.id)}
+            variant="outline"
+            size="sm"
+            className="text-xs h-7"
+          >
+            <Eye className="h-3 w-3" />
+          </Button>
         </div>
 
-        {/* Mensagem de status final */}
-        {ticket.status === 'accepted' && (
-          <div className="mt-3 flex items-center gap-2 text-sm text-orange-100">
-            <CheckCircle className="h-4 w-4 text-green-300" />
-            Proposta Aceita!
-          </div>
-        )}
-        {ticket.status === 'rejected' && (
-          <div className="mt-3 flex items-center gap-2 text-sm text-orange-100">
-            <XCircle className="h-4 w-4 text-red-300" />
-            Proposta Rejeitada.
-          </div>
-        )}
-        {ticket.status === 'pending' && user?.type === 'contratante' && (
-          <div className="mt-3 flex items-center gap-2 text-sm text-orange-100">
-            <Clock className="h-4 w-4" />
-            Aguardando sua decisão.
-          </div>
-        )}
-        {ticket.status === 'pending' && user?.type === 'prestador' && (
-          <div className="mt-3 flex items-center gap-2 text-sm text-orange-100">
-            <Clock className="h-4 w-4" />
-            Aguardando resposta do cliente.
+        {/* PDF do contrato se existir */}
+        {ticket.contract_pdf_url && (
+          <div className="mt-2 pt-2 border-t">
+            <a 
+              href={ticket.contract_pdf_url} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+            >
+              <FileText className="h-3 w-3" />
+              Ver Contrato PDF
+            </a>
           </div>
         )}
       </div>
@@ -466,38 +517,34 @@ export default function Messages() {
                       <div
                         key={conversation.id}
                         onClick={() => handleConversationClick(conversation)}
-                        className={`p-3 rounded-lg cursor-pointer transition-colors hover:bg-gray-50 ${
+                        className={`p-3 rounded-lg cursor-pointer transition-colors ${
                           currentConversation?.id === conversation.id
                             ? 'bg-orange-50 border-l-4 border-orange-500'
-                            : ''
+                            : 'hover:bg-gray-50'
                         }`}
                       >
-                        <div className="flex items-start gap-3">
-                          <div className="relative">
-                            <Avatar className="h-10 w-10">
-                              <AvatarImage 
-                                src={`https://api.dicebear.com/7.x/initials/svg?seed=${conversation.otherUser.name}`} 
-                              />
-                              <AvatarFallback className="bg-orange-100 text-orange-700">
-                                {getInitials(conversation.otherUser.name)}
-                              </AvatarFallback>
-                            </Avatar>
-                          </div>
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-10 w-10 flex-shrink-0">
+                            <AvatarImage 
+                              src={`https://api.dicebear.com/7.x/initials/svg?seed=${conversation.otherUser.name}`} 
+                            />
+                            <AvatarFallback className="bg-orange-100 text-orange-700">
+                              {getInitials(conversation.otherUser.name)}
+                            </AvatarFallback>
+                          </Avatar>
                           
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium text-gray-900 truncate">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-medium text-gray-900 truncate">
                                   {conversation.otherUser.name}
-                                </p>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <Badge 
-                                    variant={conversation.otherUser.type === 'prestador' ? 'default' : 'secondary'}
-                                    className="text-xs"
-                                  >
-                                    {conversation.otherUser.type === 'prestador' ? 'Prestador' : 'Cliente'}
-                                  </Badge>
-                                </div>
+                                </h4>
+                                <Badge 
+                                  variant={conversation.otherUser.type === 'prestador' ? 'default' : 'secondary'}
+                                  className="text-xs flex-shrink-0"
+                                >
+                                  {conversation.otherUser.type === 'prestador' ? 'Prestador' : 'Cliente'}
+                                </Badge>
                               </div>
                               <div className="text-right">
                                 <p className="text-xs text-gray-500">
@@ -580,6 +627,26 @@ export default function Messages() {
                           </DialogHeader>
                           <ScrollArea className="max-h-[70vh] pr-4">
                             <div className="space-y-4">
+                              {/* Upload de contrato PDF */}
+                              <div className="space-y-2">
+                                <Label htmlFor="contract-pdf">Contrato PDF (Opcional)</Label>
+                                <Input
+                                  id="contract-pdf"
+                                  type="file"
+                                  accept=".pdf"
+                                  onChange={handleContractFileChange}
+                                  className="cursor-pointer"
+                                />
+                                {contractFile && (
+                                  <p className="text-sm text-green-600 flex items-center gap-1">
+                                    <FileText className="h-4 w-4" />
+                                    {contractFile.name}
+                                  </p>
+                                )}
+                              </div>
+
+                              <Separator />
+
                               <div className="space-y-3">
                                 {proposalSteps.map((step, index) => (
                                   <div key={index} className="flex gap-3 items-end">
@@ -654,11 +721,11 @@ export default function Messages() {
                 
                 <Separator />
 
-                {/* ÁREA DE PROPOSTA - EXIBIDA PARA TODOS OS USUÁRIOS QUANDO HÁ PROPOSTAS */}
+                {/* ÁREA DE PROPOSTA COMPACTA - EXIBIDA PARA TODOS OS USUÁRIOS QUANDO HÁ PROPOSTAS */}
                 {latestProposal && (
-                  <div className="p-4 bg-gradient-to-r from-orange-50 to-amber-50 border-b flex-shrink-0">
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                  <div className="p-3 bg-gradient-to-r from-orange-50 to-amber-50 border-b flex-shrink-0">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2">
                         <FileText className="h-4 w-4 text-orange-600" />
                         {canCreateProposal() ? 'Última Proposta Enviada' : 'Proposta Recebida'}
                         {tickets.length > 1 && (
@@ -673,7 +740,7 @@ export default function Messages() {
                           variant="outline"
                           size="sm"
                           onClick={() => setShowAllProposals(true)}
-                          className="text-orange-600 border-orange-200 hover:bg-orange-50"
+                          className="text-orange-600 border-orange-200 hover:bg-orange-50 text-xs h-6"
                         >
                           <List className="h-3 w-3 mr-1" />
                           Ver Todas
@@ -681,7 +748,7 @@ export default function Messages() {
                       )}
                     </div>
                     
-                    {/* CARD DA PROPOSTA BASEADO NA IMAGEM */}
+                    {/* CARD DA PROPOSTA COMPACTO */}
                     <ProposalCard 
                       ticket={latestProposal} 
                       steps={latestProposalSteps} 
@@ -770,31 +837,108 @@ export default function Messages() {
           </Card>
         </div>
 
-        {/* MODAL DE DETALHES DA PROPOSTA */}
+        {/* MODAL DE DETALHES DA PROPOSTA COM GERENCIAMENTO DE STEPS */}
         <Dialog open={showProposalDetails} onOpenChange={setShowProposalDetails}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-3xl max-h-[90vh]">
             <DialogHeader>
               <DialogTitle>Detalhes da Proposta</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4">
-              {selectedTicketSteps.map((step, index) => (
-                <div key={step.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                  <div>
-                    <p className="font-medium">{step.title}</p>
-                    <p className="text-sm text-gray-500">Etapa {index + 1}</p>
+            <ScrollArea className="max-h-[70vh]">
+              <div className="space-y-4">
+                {selectedTicketSteps.map((step, index) => (
+                  <div key={step.id} className="p-4 bg-gray-50 rounded-lg">
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex-1">
+                        {editingStep === step.id ? (
+                          <div className="space-y-2">
+                            <Input
+                              value={editStepData.title}
+                              onChange={(e) => setEditStepData({ ...editStepData, title: e.target.value })}
+                              placeholder="Título da etapa"
+                            />
+                            <Input
+                              type="number"
+                              value={editStepData.price}
+                              onChange={(e) => setEditStepData({ ...editStepData, price: parseFloat(e.target.value) || 0 })}
+                              placeholder="Preço"
+                            />
+                            <div className="flex gap-2">
+                              <Button size="sm" onClick={handleSaveStep}>
+                                <Check className="h-4 w-4" />
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => setEditingStep(null)}>
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <p className="font-medium">{step.title}</p>
+                            <p className="text-sm text-gray-500">Etapa {index + 1}</p>
+                            <Badge className={getStatusConfig(step.status).bgColor + ' ' + getStatusConfig(step.status).color}>
+                              {getStatusConfig(step.status).label}
+                            </Badge>
+                          </>
+                        )}
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-lg">{formatCurrency(step.price)}</p>
+                        
+                        {/* Ações baseadas no tipo de usuário e status */}
+                        {user?.type === 'prestador' && editingStep !== step.id && (
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="outline" onClick={() => handleEditStep(step)}>
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => handleDeleteStep(step.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                            {step.status === 'in_progress' && !step.provider_completed && (
+                              <Button size="sm" onClick={() => handleMarkStepCompleted(step.id)}>
+                                Marcar Concluído
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                        
+                        {user?.type === 'contratante' && step.status === 'awaiting_confirmation' && (
+                          <Button size="sm" onClick={() => handleConfirmStepCompletion(step.id, step.ticket_id)}>
+                            Confirmar Conclusão
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Indicadores de progresso */}
+                    {step.status === 'in_progress' && (
+                      <div className="mt-2 text-sm text-blue-600">
+                        ⏳ Em andamento
+                      </div>
+                    )}
+                    {step.provider_completed && !step.client_confirmed && (
+                      <div className="mt-2 text-sm text-yellow-600">
+                        ⏳ Aguardando confirmação do cliente
+                      </div>
+                    )}
+                    {step.status === 'completed' && (
+                      <div className="mt-2 text-sm text-green-600">
+                        ✅ Concluído
+                      </div>
+                    )}
                   </div>
-                  <p className="font-bold text-lg">{formatCurrency(step.price)}</p>
-                </div>
-              ))}
-              <div className="border-t pt-4">
-                <div className="flex justify-between items-center">
-                  <p className="text-lg font-bold">Total:</p>
-                  <p className="text-2xl font-bold text-green-600">
-                    {formatCurrency(calculateProposalTotal(selectedTicketSteps))}
-                  </p>
+                ))}
+                
+                <div className="border-t pt-4">
+                  <div className="flex justify-between items-center">
+                    <p className="text-lg font-bold">Total:</p>
+                    <p className="text-2xl font-bold text-green-600">
+                      {formatCurrency(calculateProposalTotal(selectedTicketSteps))}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
+            </ScrollArea>
           </DialogContent>
         </Dialog>
 

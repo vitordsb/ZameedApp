@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
@@ -27,8 +26,6 @@ export interface Conversation {
   };
   unreadCount: number;
 }
-
-// INTERFACE MELHORADA PARA MENSAGENS COM SUPORTE A PROPOSTAS
 export interface Message {
   id: number;
   conversation_id: number;
@@ -56,6 +53,7 @@ export interface Ticket {
   created_at: string;
   updated_at: string;
   status?: string;
+  contract_pdf_url?: string; // Novo campo para PDF do contrato
 }
 
 export interface Step {
@@ -66,6 +64,8 @@ export interface Step {
   created_at: string;
   updated_at: string;
   status?: string;
+  provider_completed?: boolean; // Prestador marcou como concluído
+  client_confirmed?: boolean;   // Cliente confirmou conclusão
 }
 
 export interface CreateConversationRequest {
@@ -90,8 +90,17 @@ export interface CreateStepRequest {
   price: number;
 }
 
+// NOVA INTERFACE PARA ATUALIZAR STEP
+export interface UpdateStepRequest {
+  title?: string;
+  price?: number;
+  status?: string;
+  provider_completed?: boolean;
+  client_confirmed?: boolean;
+}
+
 export function useMessaging(initialPartnerId?: string | null) {
-  const { user, isLoggedIn } = useAuth();
+  const { user, isLoggedIn, token } = useAuth(); // Adicionado token
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
@@ -463,6 +472,108 @@ export function useMessaging(initialPartnerId?: string | null) {
     }
   }, []);
 
+  // NOVA FUNÇÃO PARA ATUALIZAR STEP
+  const updateStep = useCallback(async (stepId: number, updateData: UpdateStepRequest) => {
+    try {
+      const response = await apiRequest('PUT', `/step/${stepId}`, updateData);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Erro ao atualizar step:', errorText);
+        throw new Error(`Erro ao atualizar step: ${errorText}`);
+      }
+      
+      // Invalidar queries para atualizar dados
+      queryClient.invalidateQueries({ queryKey: ['tickets', currentConversation?.id] });
+      
+      toast({
+        title: 'Step atualizado',
+        description: 'Step atualizado com sucesso!',
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('❌ Erro ao atualizar step:', error);
+      toast({
+        title: 'Erro',
+        description: error instanceof Error ? error.message : 'Erro ao atualizar step',
+        variant: 'destructive',
+      });
+      return false;
+    }
+  }, [currentConversation, queryClient, toast]);
+
+  // NOVA FUNÇÃO PARA DELETAR STEP
+  const deleteStep = useCallback(async (stepId: number) => {
+    try {
+      const response = await apiRequest('DELETE', `/step/${stepId}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Erro ao deletar step:', errorText);
+        throw new Error(`Erro ao deletar step: ${errorText}`);
+      }
+      
+      // Invalidar queries para atualizar dados
+      queryClient.invalidateQueries({ queryKey: ['tickets', currentConversation?.id] });
+      
+      toast({
+        title: 'Step removido',
+        description: 'Step removido com sucesso!',
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('❌ Erro ao deletar step:', error);
+      toast({
+        title: 'Erro',
+        description: error instanceof Error ? error.message : 'Erro ao deletar step',
+        variant: 'destructive',
+      });
+      return false;
+    }
+  }, [currentConversation, queryClient, toast]);
+
+  // NOVA FUNÇÃO PARA UPLOAD DE PDF
+  const uploadPDF = useCallback(async (ticketId: number, file: File) => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file); // Alterado de 'pdf' para 'file'
+      
+      const response = await fetch(`https://zameed-backend.onrender.com/upload/pdf/${ticketId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}` // Adicionado token de autenticação
+        },
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Erro ao fazer upload do PDF:', errorText);
+        throw new Error(`Erro ao fazer upload do PDF: ${errorText}`);
+      }
+      
+      const result = await response.json();
+      
+      // Invalidar queries para atualizar dados
+      queryClient.invalidateQueries({ queryKey: ['tickets', currentConversation?.id] });
+      
+      toast({
+        title: 'PDF enviado',
+        description: 'Contrato PDF enviado com sucesso!',
+      });
+      
+      return result;
+    } catch (error) {
+      console.error('❌ Erro ao fazer upload do PDF:', error);
+      toast({
+        title: 'Erro',
+        description: error instanceof Error ? error.message : 'Erro ao enviar PDF',
+        variant: 'destructive',
+      });
+      return null;
+    }
+  }, [currentConversation, queryClient, toast, token]); // Adicionado token como dependência
+
   // Função para verificar se já existe um ticket ativo na conversa atual
   const hasActiveTicket = useCallback(() => {
     if (!currentConversation || !tickets) return false;
@@ -486,7 +597,7 @@ export function useMessaging(initialPartnerId?: string | null) {
   }, [currentConversation, tickets]);
 
   // FUNÇÃO MELHORADA PARA CRIAR PROPOSTA COMO MENSAGEM
-  const createProposal = useCallback(async (steps: Omit<CreateStepRequest, 'ticket_id'>[]) => {
+  const createProposal = useCallback(async (steps: Omit<CreateStepRequest, 'ticket_id'>[], contractFile?: File) => {
     if (!currentConversation) {
       toast({
         title: 'Erro',
@@ -526,6 +637,11 @@ export function useMessaging(initialPartnerId?: string | null) {
         if (!ticketId) {
           throw new Error('ID do ticket não retornado pela API');
         }
+      }
+
+      // Upload do PDF se fornecido
+      if (contractFile) {
+        await uploadPDF(ticketId, contractFile);
       }
 
       const createdSteps = [];
@@ -570,7 +686,7 @@ export function useMessaging(initialPartnerId?: string | null) {
       // Enviar mensagem de proposta
       await sendMessageMutation.mutateAsync({
         conversation_id: currentConversation.id,
-        content: `📋 Nova proposta enviada! Ticket #${ticketId} - Total: R$ ${totalPrice.toFixed(2)}`, 
+        content: `📋 Nova proposta enviada! Ticket #${ticketId} - Total: R$ ${totalPrice.toFixed(2)}${contractFile ? ' (Contrato anexado)' : ''}`, 
         type: 'proposal',
         proposal_data: proposalData
       });
@@ -595,7 +711,7 @@ export function useMessaging(initialPartnerId?: string | null) {
       });
       return false;
     }
-  }, [currentConversation, user, getActiveTicket, sendMessageMutation, queryClient, toast]);
+  }, [currentConversation, user, getActiveTicket, uploadPDF, sendMessageMutation, queryClient, toast]);
 
   // NOVA FUNÇÃO PARA ACEITAR/REJEITAR PROPOSTA
   const updateTicketStatus = useCallback(async (ticketId: number, status: 'accepted' | 'rejected') => {
@@ -619,6 +735,15 @@ export function useMessaging(initialPartnerId?: string | null) {
         throw new Error(`Erro ao atualizar proposta: ${errorText}`);
       }
 
+      // Se a proposta foi aceita, iniciar o primeiro step
+      if (status === 'accepted') {
+        const steps = await getStepsForTicket(ticketId);
+        if (steps.length > 0) {
+          // Marcar o primeiro step como "in_progress"
+          await updateStep(steps[0].id, { status: 'in_progress' });
+        }
+      }
+
       // Invalidar queries para atualizar dados
       queryClient.invalidateQueries({ queryKey: ['tickets', currentConversation.id] });
       queryClient.invalidateQueries({ queryKey: ['messages', currentConversation.id] });
@@ -626,7 +751,7 @@ export function useMessaging(initialPartnerId?: string | null) {
       toast({
         title: status === 'accepted' ? 'Proposta aceita' : 'Proposta rejeitada',
         description: status === 'accepted' 
-          ? 'A proposta foi aceita com sucesso!' 
+          ? 'A proposta foi aceita e o primeiro passo foi iniciado!' 
           : 'A proposta foi rejeitada.',
       });
 
@@ -640,7 +765,36 @@ export function useMessaging(initialPartnerId?: string | null) {
       });
       return false;
     }
-  }, [currentConversation, queryClient, toast]);
+  }, [currentConversation, getStepsForTicket, updateStep, queryClient, toast]);
+
+  // NOVA FUNÇÃO PARA MARCAR STEP COMO CONCLUÍDO (PRESTADOR)
+  const markStepCompleted = useCallback(async (stepId: number) => {
+    return await updateStep(stepId, { 
+      provider_completed: true,
+      status: 'awaiting_confirmation'
+    });
+  }, [updateStep]);
+
+  // NOVA FUNÇÃO PARA CONFIRMAR CONCLUSÃO DO STEP (CLIENTE)
+  const confirmStepCompletion = useCallback(async (stepId: number, ticketId: number) => {
+    const success = await updateStep(stepId, { 
+      client_confirmed: true,
+      status: 'completed'
+    });
+    
+    if (success) {
+      // Verificar se há próximo step para iniciar
+      const steps = await getStepsForTicket(ticketId);
+      const currentStepIndex = steps.findIndex(s => s.id === stepId);
+      const nextStep = steps[currentStepIndex + 1];
+      
+      if (nextStep && nextStep.status !== 'in_progress') {
+        await updateStep(nextStep.id, { status: 'in_progress' });
+      }
+    }
+    
+    return success;
+  }, [updateStep, getStepsForTicket]);
 
   return {
     // Estados
@@ -667,12 +821,18 @@ export function useMessaging(initialPartnerId?: string | null) {
     getStepsForTicket,
     hasActiveTicket,
     getActiveTicket,
-    updateTicketStatus, // Nova função
+    updateTicketStatus,
+    updateStep,        // Nova função
+    deleteStep,        // Nova função
+    uploadPDF,         // Nova função
+    markStepCompleted, // Nova função
+    confirmStepCompletion, // Nova função
     
     // Errors
     conversationsError,
     messagesError,
   };
 }
+
 
 

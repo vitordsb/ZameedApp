@@ -174,7 +174,7 @@ export default function DemandsPage() {
     const now = new Date();
     const diffTime = Math.abs(now.getTime() - demandDate.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays <= 7; // Considera nova se foi criada nos últimos 7 dias
+    return diffDays <= 3; // Considera nova se foi criada nos últimos 3 dias
   };
 
   return (

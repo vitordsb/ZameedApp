@@ -34,8 +34,6 @@ interface Demand {
 export default function DemandsManager() {
   const { user } = useAuth();
   const { toast } = useToast();
-
-  // Estados das demandas
   const [demands, setDemands] = useState<Demand[]>([]);
   const [loadingDemands, setLoadingDemands] = useState(false);
   const [errorDemands, setErrorDemands] = useState<string | null>(null);
@@ -46,7 +44,6 @@ export default function DemandsManager() {
     price: string;
   }>({ title: "", description: "", price: "" });
 
-  // Estados para criação de nova demanda
   const [isCreating, setIsCreating] = useState(false);
   const [creatingDemand, setCreatingDemand] = useState(false);
   const [newDemand, setNewDemand] = useState<{

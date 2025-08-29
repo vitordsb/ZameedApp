@@ -1,119 +1,25 @@
+
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
-
-export interface Conversation {
-  id: number;
-  user1_id: number;
-  user2_id: number;
-  isNegotiation: boolean;
-  created_at: string;
-  updated_at: string;
-  otherUser: {
-    id: number;
-    name: string;
-    email: string;
-    type: "prestador" | "contratante";
-  };
-  lastMessage?: {
-    id: number;
-    content: string;
-    created_at: string;
-    sender_id: number;
-    type?: string;
-  };
-  unreadCount: number;
-}
-export interface Message {
-  id: number;
-  conversation_id: number;
-  sender_id: number;
-  content: string;
-  created_at: string;
-  updated_at: string;
-  type?: 'text' | 'proposal'; // Novo campo para tipo de mensagem
-  proposal_data?: {
-    ticket_id: number;
-    steps: Array<{
-      id: number;
-      title: string;
-      price: number;
-      status?: string;
-    }>;
-    total: number;
-    status?: string;
-  };
-}
-
-export interface Ticket {
-  id: number;
-  conversation_id: number;
-  created_at: string;
-  updated_at: string;
-  status?: string;
-  contract_pdf_url?: string; // Novo campo para PDF do contrato
-}
-
-export interface Step {
-  id: number;
-  ticket_id: number;
-  title: string;
-  price: number;
-  created_at: string;
-  updated_at: string;
-  status?: string;
-  provider_completed?: boolean; // Prestador marcou como concluído
-  client_confirmed?: boolean;   // Cliente confirmou conclusão
-}
-
-export interface CreateConversationRequest {
-  user1_id: number;
-  user2_id: number;
-}
-
-export interface CreateMessageRequest {
-  conversation_id: number;
-  content: string;
-  type?: 'text' | 'proposal';
-  proposal_data?: any;
-}
-
-export interface CreateTicketRequest {
-  conversation_id: number;
-}
-
-export interface CreateStepRequest {
-  ticket_id: number;
-  title: string;
-  price: number;
-}
-
-// NOVA INTERFACE PARA ATUALIZAR STEP
-export interface UpdateStepRequest {
-  title?: string;
-  price?: number;
-  status?: string;
-  provider_completed?: boolean;
-  client_confirmed?: boolean;
-}
+import { Conversation, Message, CreateMessageRequest, Ticket, Step, CreateConversationRequest, CreateStepRequest, CreateTicketRequest, SignDocumentRequest, UpdateStepRequest } from '@/lib/Interfaces';
 
 export function useMessaging(initialPartnerId?: string | null) {
-  const { user, isLoggedIn, token } = useAuth(); // Adicionado token
+  const { user, isLoggedIn } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
+
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
   const [newMessage, setNewMessage] = useState('');
   const [isInitializing, setIsInitializing] = useState(false);
 
-  // Buscar todas as conversas do usuário
-  const { 
-    data: conversationsData, 
-    isLoading: loadingConversations, 
+  const {
+    data: conversationsData,
+    isLoading: loadingConversations,
     error: conversationsError,
-    refetch: refetchConversations 
+    refetch: refetchConversations
   } = useQuery({
     queryKey: ['conversations'],
     queryFn: async () => {
@@ -129,23 +35,19 @@ export function useMessaging(initialPartnerId?: string | null) {
     refetchInterval: 100000,
   });
 
-  // Buscar dados de usuários para as conversas
   const userIds = useMemo(() => {
     if (!conversationsData?.conversations || !user) return [];
-    
     const ids = conversationsData.conversations.map((conv: any) => {
       return conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
     });
-    
     return ids;
   }, [conversationsData, user]);
 
-  // Query para buscar dados dos usuários
   const { data: usersData, isLoading: loadingUsers } = useQuery({
     queryKey: ['users', userIds],
     queryFn: async () => {
       if (userIds.length === 0) return {};
-      
+
       const userPromises = userIds.map(async (userId: number) => {
         try {
           const response = await apiRequest('GET', `/users/${userId}`);
@@ -163,7 +65,7 @@ export function useMessaging(initialPartnerId?: string | null) {
 
       const results = await Promise.all(userPromises);
       const usersMap: Record<number, any> = {};
-      
+
       results.forEach(({ id, data }) => {
         usersMap[id] = data || {
           id,
@@ -178,7 +80,6 @@ export function useMessaging(initialPartnerId?: string | null) {
     staleTime: 5 * 60 * 1000,
   });
 
-  // Processar conversas com dados dos usuários
   const processedConversations: Conversation[] = useMemo(() => {
     if (!conversationsData?.conversations || !user || !usersData) {
       return [];
@@ -187,32 +88,29 @@ export function useMessaging(initialPartnerId?: string | null) {
       .map((conv: any) => {
         const otherUserId = conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
         const otherUser = usersData[otherUserId];
-
         const processedConv: Conversation = {
-          id: conv.conversation_id, 
+          id: conv.conversation_id,
           user1_id: conv.user1_id,
           user2_id: conv.user2_id,
           isNegotiation: true,
-          created_at: conv.createdAt, 
-          updated_at: conv.updatedAt, 
+          created_at: conv.createdAt,
+          updated_at: conv.updatedAt,
           otherUser: otherUser || {
             id: otherUserId,
             name: 'Usuário',
             email: '',
             type: 'contratante' as const
           },
-          unreadCount: 0 
+          unreadCount: 0
         };
 
         if (!processedConv.id || typeof processedConv.id !== 'number') {
           console.error('❌ Conversa processada sem ID válido!', processedConv);
           return null;
         }
-        
         return processedConv;
       })
       .filter((conv: Conversation | null) => conv !== null) as Conversation[];
-
     return tempProcessed;
   }, [conversationsData, user, usersData]);
 
@@ -230,12 +128,10 @@ export function useMessaging(initialPartnerId?: string | null) {
     onSuccess: async (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      
-      // Aguardar um pouco para garantir que os dados sejam atualizados
       setTimeout(async () => {
         await refetchConversations();
       }, 500);
-      
+
       toast({
         title: 'Conversa criada',
         description: 'Nova conversa iniciada com sucesso.',
@@ -250,27 +146,22 @@ export function useMessaging(initialPartnerId?: string | null) {
       });
     },
   });
-
-  // MUTATION MELHORADA PARA ENVIAR MENSAGENS COM SUPORTE A PROPOSTAS
   const sendMessageMutation = useMutation({
     mutationFn: async (data: CreateMessageRequest) => {
       if (!data.conversation_id || !data.content?.trim()) {
         throw new Error('Dados inválidos para envio de mensagem');
       }
-      
       const response = await apiRequest('POST', '/message', {
         conversation_id: data.conversation_id,
         content: data.content.trim(),
         type: data.type || 'text',
         proposal_data: data.proposal_data
       });
-      
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ Erro ao enviar mensagem:', errorText);
         throw new Error(`Erro ao enviar mensagem: ${response.status}`);
       }
-      
       const result = await response.json();
       return result;
     },
@@ -306,7 +197,7 @@ export function useMessaging(initialPartnerId?: string | null) {
 
     try {
       setIsInitializing(true);
-      const existingConversation = processedConversations.find(conv => 
+      const existingConversation = processedConversations.find(conv =>
         conv.otherUser.id === targetUserId
       );
       if (existingConversation) {
@@ -342,7 +233,7 @@ export function useMessaging(initialPartnerId?: string | null) {
 
     if (initialPartnerId) {
       const targetId = parseInt(initialPartnerId);
-      
+
       const targetConversation = processedConversations.find(conv => {
         return conv.otherUser.id === targetId;
       });
@@ -356,7 +247,7 @@ export function useMessaging(initialPartnerId?: string | null) {
         }
       }
     } else if (!currentConversation && processedConversations.length > 0) {
-      const mostRecentConversation = processedConversations.sort((a, b) => 
+      const mostRecentConversation = processedConversations.sort((a, b) =>
         new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
       )[0];
       if (mostRecentConversation) {
@@ -370,18 +261,18 @@ export function useMessaging(initialPartnerId?: string | null) {
     if (initialPartnerId && !loadingConversations && !loadingUsers && processedConversations.length > 0) {
       const targetId = parseInt(initialPartnerId);
       const newConversation = processedConversations.find(conv => conv.otherUser.id === targetId);
-      
+
       if (newConversation && (!currentConversation || currentConversation.id !== newConversation.id)) {
         setCurrentConversation(newConversation);
       }
     }
   }, [processedConversations, initialPartnerId, currentConversation, loadingConversations, loadingUsers]);
 
-  const { 
-    data: messages = [], 
+  const {
+    data: messages = [],
     isLoading: loadingMessages,
     error: messagesError,
-    refetch: refetchMessages 
+    refetch: refetchMessages
   } = useQuery<Message[]>({
     queryKey: ['messages', currentConversation?.id],
     queryFn: async () => {
@@ -389,7 +280,7 @@ export function useMessaging(initialPartnerId?: string | null) {
         console.warn('⚠️ Tentativa de buscar mensagens sem ID de conversa válido');
         return [];
       }
-      
+
       const response = await apiRequest('GET', `/message/conversation/${currentConversation.id}`);
       if (!response.ok) {
         throw new Error(`Erro ao buscar mensagens: ${response.status}`);
@@ -407,7 +298,7 @@ export function useMessaging(initialPartnerId?: string | null) {
           type: 'text'
         };
       });
-      
+
       return processedMessages;
     },
     enabled: !!currentConversation?.id && isLoggedIn && typeof currentConversation.id === 'number',
@@ -438,14 +329,14 @@ export function useMessaging(initialPartnerId?: string | null) {
   }, [currentConversation, newMessage, sendMessageMutation]);
 
   // Query para buscar tickets de uma conversa - MELHORADA
-  const { 
-    data: tickets = [], 
-    isLoading: loadingTickets 
+  const {
+    data: tickets = [],
+    isLoading: loadingTickets
   } = useQuery<Ticket[]>({
     queryKey: ['tickets', currentConversation?.id],
     queryFn: async () => {
       if (!currentConversation?.id) return [];
-      
+
       const response = await apiRequest('GET', `/ticket/conversation/${currentConversation.id}`);
       if (!response.ok) {
         throw new Error(`Erro ao buscar tickets: ${response.status}`);
@@ -457,7 +348,6 @@ export function useMessaging(initialPartnerId?: string | null) {
     staleTime: 30000,
   });
 
-  // Query para buscar steps de um ticket específico - MELHORADA
   const getStepsForTicket = useCallback(async (ticketId: number): Promise<Step[]> => {
     try {
       const response = await apiRequest('GET', `/step/${ticketId}`);
@@ -465,6 +355,7 @@ export function useMessaging(initialPartnerId?: string | null) {
         throw new Error(`Erro ao buscar steps: ${response.status}`);
       }
       const data = await response.json();
+      console.log(data)
       return data.steps || [];
     } catch (error) {
       console.error('❌ Erro ao buscar steps:', error);
@@ -472,7 +363,6 @@ export function useMessaging(initialPartnerId?: string | null) {
     }
   }, []);
 
-  // NOVA FUNÇÃO PARA ATUALIZAR STEP
   const updateStep = useCallback(async (stepId: number, updateData: UpdateStepRequest) => {
     try {
       const response = await apiRequest('PUT', `/step/${stepId}`, updateData);
@@ -481,15 +371,15 @@ export function useMessaging(initialPartnerId?: string | null) {
         console.error('❌ Erro ao atualizar step:', errorText);
         throw new Error(`Erro ao atualizar step: ${errorText}`);
       }
-      
-      // Invalidar queries para atualizar dados
+      const data = await response.json();
+      console.log('✅ Step atualizado:', data);
       queryClient.invalidateQueries({ queryKey: ['tickets', currentConversation?.id] });
-      
+
       toast({
         title: 'Step atualizado',
         description: 'Step atualizado com sucesso!',
       });
-      
+
       return true;
     } catch (error) {
       console.error('❌ Erro ao atualizar step:', error);
@@ -502,7 +392,6 @@ export function useMessaging(initialPartnerId?: string | null) {
     }
   }, [currentConversation, queryClient, toast]);
 
-  // NOVA FUNÇÃO PARA DELETAR STEP
   const deleteStep = useCallback(async (stepId: number) => {
     try {
       const response = await apiRequest('DELETE', `/step/${stepId}`);
@@ -511,15 +400,24 @@ export function useMessaging(initialPartnerId?: string | null) {
         console.error('❌ Erro ao deletar step:', errorText);
         throw new Error(`Erro ao deletar step: ${errorText}`);
       }
-      
-      // Invalidar queries para atualizar dados
+      else if (!currentConversation?.id) {
+        console.error('ERRO: Tentativa de deletar step sem conversa selecionada');
+        return false;
+      }
+      // se a quantidade de step for 0 o ticket deve ser deletado
+      else if (tickets.length === 0) {
+        await deleteTicket(currentConversation.id);
+      }
+
+      const data = await response.json();
+      console.log('🗑️ Step deletado com sucesso:', data);
       queryClient.invalidateQueries({ queryKey: ['tickets', currentConversation?.id] });
-      
+
       toast({
         title: 'Step removido',
         description: 'Step removido com sucesso!',
       });
-      
+
       return true;
     } catch (error) {
       console.error('❌ Erro ao deletar step:', error);
@@ -531,73 +429,171 @@ export function useMessaging(initialPartnerId?: string | null) {
       return false;
     }
   }, [currentConversation, queryClient, toast]);
+  // se a quantidade de step for 0 o ticket deve ser deletado
 
-  // NOVA FUNÇÃO PARA UPLOAD DE PDF
-  const uploadPDF = useCallback(async (ticketId: number, file: File) => {
+  const deleteTicket = async (ticketId: number) => {
     try {
-      const formData = new FormData();
-      formData.append('file', file); // Alterado de 'pdf' para 'file'
-      
-      const response = await fetch(`https://zameed-backend.onrender.com/upload/pdf/${ticketId}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}` // Adicionado token de autenticação
-        },
-        body: formData,
-      });
-      
+      const response = await apiRequest('DELETE', `/ticket/${ticketId}`);
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('❌ Erro ao fazer upload do PDF:', errorText);
-        throw new Error(`Erro ao fazer upload do PDF: ${errorText}`);
+        console.error('❌ Erro ao deletar ticket:', errorText);
+        throw new Error(`Erro ao deletar ticket: ${errorText}`);
       }
-      
-      const result = await response.json();
-      
-      // Invalidar queries para atualizar dados
+      else if (!currentConversation?.id) {
+        console.error('ERRO: Tentativa de deletar ticket sem conversa selecionada');
+        return false;
+      }
+
+      const data = await response.json();
+      console.log('🗑️ Ticket deletado com sucesso:', data);
       queryClient.invalidateQueries({ queryKey: ['tickets', currentConversation?.id] });
-      
+
       toast({
-        title: 'PDF enviado',
-        description: 'Contrato PDF enviado com sucesso!',
+        title: 'Ticket removido',
+        description: 'Ticket removido com sucesso!',
       });
-      
-      return result;
+
+      return true;
     } catch (error) {
-      console.error('❌ Erro ao fazer upload do PDF:', error);
+      console.error('❌ Erro ao deletar ticket:', error);
       toast({
         title: 'Erro',
-        description: error instanceof Error ? error.message : 'Erro ao enviar PDF',
+        description: error instanceof Error ? error.message : 'Erro ao deletar ticket',
         variant: 'destructive',
+      });
+      return false;
+    }
+  };
+
+
+  // ✅ aceita File | Blob
+  const uploadPDF = async (ticketId: number, file: File | Blob) => {
+    try {
+      const formData = new FormData();
+      formData.append("file", file, (file as File).name || `ticket-${ticketId}.pdf`);
+
+      // IMPORTANTE: apiRequest não deve forçar "Content-Type: application/json" quando body é FormData
+      const response = await apiRequest("POST", `/upload/pdf/${ticketId}`, formData);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Erro no upload: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      queryClient.invalidateQueries({ queryKey: ["tickets", currentConversation?.id] });
+      toast({ title: "Contrato enviado", description: "Contrato PDF enviado com sucesso!" });
+
+      // opcional: já puxa o PDF para cache/local
+      await buscarPDF(ticketId);
+
+      return result;
+    } catch (error) {
+      console.error("❌ Erro no upload do PDF:", error);
+      toast({
+        title: "Erro no upload",
+        description: error instanceof Error ? error.message : "Erro ao enviar contrato PDF",
+        variant: "destructive",
       });
       return null;
     }
-  }, [currentConversation, queryClient, toast, token]); // Adicionado token como dependência
+  };
 
-  // Função para verificar se já existe um ticket ativo na conversa atual
-  const hasActiveTicket = useCallback(() => {
-    if (!currentConversation || !tickets) return false;
-    const activeTicket = tickets.find(ticket => 
-      ticket.conversation_id === currentConversation.id && 
-      (!ticket.status || ticket.status === 'open' || ticket.status === 'in_progress' || ticket.status === 'pending')
-    );
-    
-    return !!activeTicket;
-  }, [currentConversation, tickets]);
+  function parseFilenameFromDisposition(disposition?: string | null) {
+    if (!disposition) return null;
+    // filename*=UTF-8''nome.pdf OU filename="nome.pdf"
+    const m = /filename\*?=(?:UTF-8''|")?([^\";]+)/i.exec(disposition);
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+  const buscarPDF = async (ticketId: number) => {
+    try {
+      // 1) Buscar a lista de anexos (JSON)
+      const listRes = await apiRequest("GET", `/attchment/ticket/${ticketId}`);
+      if (!listRes.ok) {
+        const t = await listRes.text();
+        throw new Error(`Erro ao listar anexos: ${listRes.status} - ${t}`);
+      }
 
-  // Função para buscar ticket ativo da conversa atual
+      const listJson = await listRes.json();
+      const attachments: Array<{ id: number; ticket_id: number; pdf_path: string; date?: string }> =
+        listJson?.attachments || [];
+
+      if (!attachments.length) {
+        throw new Error("Nenhum PDF anexado a este ticket.");
+      }
+
+      const chosen =
+        attachments
+          .slice()
+          .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())[0];
+      const base = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, "") || "";
+      const pdfUrlAbs = `${base}/${chosen.pdf_path.replace(/^\/+/, "")}`;
+
+      // 4) Buscar o PDF real
+      const fileRes = await fetch(pdfUrlAbs, {
+        method: "GET",
+      });
+      if (!fileRes.ok) {
+        const t = await fileRes.text();
+        throw new Error(`Erro ao baixar PDF: ${fileRes.status} - ${t}`);
+      }
+
+      const blob = await fileRes.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      // tenta extrair filename (se houver header; com estático pode não ter)
+      const disp = fileRes.headers.get("Content-Disposition") || "";
+      const m = /filename\*?=(?:UTF-8''|")?([^\";]+)/i.exec(disp);
+      const filename =
+        (m ? decodeURIComponent(m[1]) : null) ||
+        `contrato-ticket-${ticketId}.pdf`;
+
+      return { blob, blobUrl, filename };
+    } catch (error) {
+      console.error("❌ Erro ao buscar PDF:", error);
+      return null;
+    }
+  }; // Função para buscar e PDF do ticket ativo da conversa atual
+  const openTicketPdfInNewTab = async (ticketId: number) => {
+    const res = await fetchTicketPDF(ticketId);
+    if (!res) return false;
+
+    const { blobUrl } = res;
+    // abrir imediatamente em resposta a clique de usuário evita bloqueio de popup
+    window.open(blobUrl, "_blank", "noopener,noreferrer");
+
+    // libera memória depois de um tempo
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+    return true;
+  };
+
+  // ✅ baixar com nome correto
+  const downloadTicketPdf = async (ticketId: number) => {
+    const res = await fetchTicketPDF(ticketId);
+    if (!res) return false;
+
+    const { blobUrl, filename } = res;
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(blobUrl);
+    return true;
+  };
   const getActiveTicket = useCallback(() => {
     if (!currentConversation || !tickets) return null;
-    const activeTicket = tickets.find(ticket => 
-      ticket.conversation_id === currentConversation.id && 
-      (!ticket.status || ticket.status === 'open' || ticket.status === 'in_progress' || ticket.status === 'pending')
+    const activeTicket = tickets.find(ticket =>
+      ticket.conversation_id === currentConversation.id &&
+      (!ticket.status || ticket.status === 'concluída' || ticket.status === 'cancelada' || ticket.status === 'em andamento' || ticket.status === 'pendente')
     );
-    
+
     return activeTicket || null;
   }, [currentConversation, tickets]);
 
   // FUNÇÃO MELHORADA PARA CRIAR PROPOSTA COMO MENSAGEM
-  const createProposal = useCallback(async (steps: Omit<CreateStepRequest, 'ticket_id'>[], contractFile?: File) => {
+  const createProposal = useCallback(async (steps: Omit<CreateStepRequest, 'ticket_id'>[], contractFile?: string) => {
     if (!currentConversation) {
       toast({
         title: 'Erro',
@@ -617,11 +613,12 @@ export function useMessaging(initialPartnerId?: string | null) {
     }
 
     let ticketId: number;
-    
+
     try {
       const existingActiveTicket = getActiveTicket();
       if (existingActiveTicket) {
         ticketId = existingActiveTicket.id;
+        console.log(ticketId)
       } else {
         console.log('🎫 Criando novo ticket...');
         const ticketResponse = await apiRequest('POST', '/ticket', {
@@ -639,15 +636,10 @@ export function useMessaging(initialPartnerId?: string | null) {
         }
       }
 
-      // Upload do PDF se fornecido
-      if (contractFile) {
-        await uploadPDF(ticketId, contractFile);
-      }
-
       const createdSteps = [];
       for (let i = 0; i < steps.length; i++) {
         const step = steps[i];
-        
+
         try {
           const stepResponse = await apiRequest('POST', '/step', {
             ticket_id: ticketId,
@@ -662,6 +654,7 @@ export function useMessaging(initialPartnerId?: string | null) {
           }
 
           const stepResult = await stepResponse.json();
+          console.log(`✅ Step ${i + 1} criado com sucesso:`, stepResult);
           createdSteps.push({
             id: stepResult.step?.id || stepResult.id,
             title: step.title,
@@ -674,8 +667,20 @@ export function useMessaging(initialPartnerId?: string | null) {
         }
       }
 
+      // Upload do PDF APÓS criar o ticket e steps
+      let uploadSuccess = true;
+      if (contractFile) {
+        console.log('📎 Fazendo upload do contrato...');
+        const uploadResult = await uploadPDF(ticketId, contractFile);
+        uploadSuccess = !!uploadResult;
+
+        if (!uploadSuccess) {
+          console.warn('⚠️ Upload do PDF falhou, mas continuando com a proposta...');
+        }
+      }
+
       const totalPrice = steps.reduce((sum, s) => sum + s.price, 0);
-      
+
       const proposalData = {
         ticket_id: ticketId,
         steps: createdSteps,
@@ -686,7 +691,7 @@ export function useMessaging(initialPartnerId?: string | null) {
       // Enviar mensagem de proposta
       await sendMessageMutation.mutateAsync({
         conversation_id: currentConversation.id,
-        content: `📋 Nova proposta enviada! Ticket #${ticketId} - Total: R$ ${totalPrice.toFixed(2)}${contractFile ? ' (Contrato anexado)' : ''}`, 
+        content: `📋 Nova proposta enviada! Ticket #${ticketId} - Total: R$ ${totalPrice.toFixed(2)}${contractFile ? (uploadSuccess ? ' (Contrato anexado)' : ' (Erro no upload do contrato)') : ''}`,
         type: 'proposal',
         proposal_data: proposalData
       });
@@ -698,7 +703,10 @@ export function useMessaging(initialPartnerId?: string | null) {
 
       toast({
         title: 'Proposta enviada',
-        description: 'Sua proposta foi enviada com sucesso!',
+        description: contractFile && !uploadSuccess
+          ? 'Proposta enviada, mas houve erro no upload do contrato. Você pode tentar anexar novamente.'
+          : 'Sua proposta foi enviada com sucesso!',
+        variant: contractFile && !uploadSuccess ? 'destructive' : 'default',
       });
 
       return true;
@@ -713,8 +721,7 @@ export function useMessaging(initialPartnerId?: string | null) {
     }
   }, [currentConversation, user, getActiveTicket, uploadPDF, sendMessageMutation, queryClient, toast]);
 
-  // NOVA FUNÇÃO PARA ACEITAR/REJEITAR PROPOSTA
-  const updateTicketStatus = useCallback(async (ticketId: number, status: 'accepted' | 'rejected') => {
+  const updateTicketStatus = useCallback(async (ticketId: number, status: 'accepted' | 'rejected' | 'signed') => {
     if (!currentConversation) {
       toast({
         title: 'Erro',
@@ -725,9 +732,15 @@ export function useMessaging(initialPartnerId?: string | null) {
     }
 
     try {
-      const response = await apiRequest('PATCH', `/ticket/${ticketId}`, {
-        status: status
-      });
+      const updateData: any = { status: status };
+
+      // Se for assinatura, adicionar dados de assinatura
+      if (status === 'signed' && user) {
+        updateData.signed_at = new Date().toISOString();
+        updateData.signed_by = user.id;
+      }
+
+      const response = await apiRequest('PATCH', `/ticket/${ticketId}`, updateData);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -739,20 +752,31 @@ export function useMessaging(initialPartnerId?: string | null) {
       if (status === 'accepted') {
         const steps = await getStepsForTicket(ticketId);
         if (steps.length > 0) {
-          // Marcar o primeiro step como "in_progress"
           await updateStep(steps[0].id, { status: 'in_progress' });
         }
       }
 
-      // Invalidar queries para atualizar dados
       queryClient.invalidateQueries({ queryKey: ['tickets', currentConversation.id] });
       queryClient.invalidateQueries({ queryKey: ['messages', currentConversation.id] });
 
+      let successMessage = '';
+      switch (status) {
+        case 'accepted':
+          successMessage = 'A proposta foi aceita e o primeiro passo foi iniciado!';
+          break;
+        case 'rejected':
+          successMessage = 'A proposta foi rejeitada.';
+          break;
+        case 'signed':
+          successMessage = 'O documento foi assinado digitalmente com sucesso!';
+          break;
+      }
+
       toast({
-        title: status === 'accepted' ? 'Proposta aceita' : 'Proposta rejeitada',
-        description: status === 'accepted' 
-          ? 'A proposta foi aceita e o primeiro passo foi iniciado!' 
-          : 'A proposta foi rejeitada.',
+        title: status === 'accepted' ? 'Proposta aceita' :
+          status === 'rejected' ? 'Proposta rejeitada' :
+            'Documento assinado',
+        description: successMessage,
       });
 
       return true;
@@ -765,34 +789,81 @@ export function useMessaging(initialPartnerId?: string | null) {
       });
       return false;
     }
-  }, [currentConversation, getStepsForTicket, updateStep, queryClient, toast]);
+  }, [currentConversation, getStepsForTicket, updateStep, queryClient, toast, user]);
 
-  // NOVA FUNÇÃO PARA MARCAR STEP COMO CONCLUÍDO (PRESTADOR)
+  const signDocument = useCallback(async (ticketId: number, password: string) => {
+    if (!user) {
+      toast({
+        title: 'Erro',
+        description: 'Usuário não autenticado.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+
+    try {
+      const validateResponse = await apiRequest('POST', '/auth/validate-password', {
+        email: user.email,
+        password: password
+      });
+
+      if (!validateResponse.ok) {
+        toast({
+          title: 'Senha incorreta',
+          description: 'A senha informada não confere com a sua senha de login.',
+          variant: 'destructive',
+        });
+        return false;
+      }
+
+      const success = await updateTicketStatus(ticketId, 'signed');
+
+      if (success) {
+        await sendMessageMutation.mutateAsync({
+          conversation_id: currentConversation!.id,
+          content: `✅ Documento assinado digitalmente por ${user.name} em ${new Date().toLocaleString('pt-BR')}`,
+          type: 'text'
+        });
+      }
+
+      return success;
+    } catch (error) {
+      console.error('❌ Erro ao assinar documento:', error);
+      toast({
+        title: 'Erro na assinatura',
+        description: 'Não foi possível assinar o documento. Tente novamente.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+  }, [user, updateTicketStatus, sendMessageMutation, currentConversation, toast]);
+
+  // FUNÇÃO PARA MARCAR STEP COMO CONCLUÍDO (PRESTADOR)
   const markStepCompleted = useCallback(async (stepId: number) => {
-    return await updateStep(stepId, { 
+    return await updateStep(stepId, {
       provider_completed: true,
       status: 'awaiting_confirmation'
     });
   }, [updateStep]);
 
-  // NOVA FUNÇÃO PARA CONFIRMAR CONCLUSÃO DO STEP (CLIENTE)
+  // FUNÇÃO PARA CONFIRMAR CONCLUSÃO DO STEP (CLIENTE)
   const confirmStepCompletion = useCallback(async (stepId: number, ticketId: number) => {
-    const success = await updateStep(stepId, { 
+    const success = await updateStep(stepId, {
       client_confirmed: true,
       status: 'completed'
     });
-    
+
     if (success) {
       // Verificar se há próximo step para iniciar
       const steps = await getStepsForTicket(ticketId);
       const currentStepIndex = steps.findIndex(s => s.id === stepId);
       const nextStep = steps[currentStepIndex + 1];
-      
+
       if (nextStep && nextStep.status !== 'in_progress') {
         await updateStep(nextStep.id, { status: 'in_progress' });
       }
     }
-    
+
     return success;
   }, [updateStep, getStepsForTicket]);
 
@@ -804,13 +875,13 @@ export function useMessaging(initialPartnerId?: string | null) {
     newMessage,
     tickets,
     unreadMessageCount: 0,
-    
+
     // Loading states
     loadingConversations,
     loadingMessages,
     loadingTickets,
     sendingMessage: sendMessageMutation.isPending,
-    
+
     // Funções
     setNewMessage,
     sendMessage,
@@ -819,20 +890,22 @@ export function useMessaging(initialPartnerId?: string | null) {
     startConversationAndNavigate,
     createProposal,
     getStepsForTicket,
-    hasActiveTicket,
     getActiveTicket,
     updateTicketStatus,
-    updateStep,        // Nova função
-    deleteStep,        // Nova função
-    uploadPDF,         // Nova função
-    markStepCompleted, // Nova função
-    confirmStepCompletion, // Nova função
-    
+    updateStep,
+    deleteStep,
+    uploadPDF,
+    buscarPDF,        // retorna { blobUrl, filename }
+    openTicketPdfInNewTab, // abre nova aba
+    downloadTicketPdf,
+    markStepCompleted,
+    confirmStepCompletion,
+    signDocument,
+
     // Errors
     conversationsError,
     messagesError,
   };
 }
-
 
 

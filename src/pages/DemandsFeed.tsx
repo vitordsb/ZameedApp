@@ -32,29 +32,7 @@ import {
   Briefcase,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
-
-interface Demand {
-  id_demand: number;
-  id_user: number;
-  title: string;
-  description: string;
-  price: number;
-  status: string;
-  created_at: string;
-  updated_at: string;
-  User?: UserData; // Adiciona a propriedade User opcional
-}
-
-interface UserData {
-  id: number;
-  name: string;
-  email: string;
-}
-
-interface EnrichedDemand extends Demand {
-  userName: string;
-  userEmail: string;
-}
+import { Demand, UserData, EnrichedDemand } from "@/lib/Interfaces";
 
 const getInitials = (name: string) => {
   if (!name) return "";
@@ -104,7 +82,7 @@ export default function DemandsPage() {
   if (loading) {
     return (
       <ApplicationLayout>
-         <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50">
+        <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50">
           <div className="flex items-center justify-center h-screen">
             <div className="text-center space-y-6 bg-white/80 backdrop-blur-sm p-8 rounded-3xl border border-white/20 shadow-xl">
             </div>
@@ -126,9 +104,9 @@ export default function DemandsPage() {
               <div className="w-20 h-20 bg-gradient-to-br from-amber-100 to-orange-200 rounded-full flex items-center justify-center mx-auto">
                 <span className="text-red-600 text-3xl">⚠️</span>
               </div>
-              </div>
             </div>
           </div>
+        </div>
       </ApplicationLayout>
     );
   }
@@ -184,8 +162,8 @@ export default function DemandsPage() {
           <div className="mb-8">
             <div className="flex items-center justify-between">
               <p className="text-lg text-slate-600">
-                {filtered.length === 0 ? "Nenhuma demanda encontrada" : 
-                 `${filtered.length} demanda${filtered.length !== 1 ? 's' : ''} encontrada${filtered.length !== 1 ? 's' : ''}`}
+                {filtered.length === 0 ? "Nenhuma demanda encontrada" :
+                  `${filtered.length} demanda${filtered.length !== 1 ? 's' : ''} encontrada${filtered.length !== 1 ? 's' : ''}`}
               </p>
               {searchTerm && (
                 <Badge className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full transition-all duration-200 hover:scale-105 hover:shadow-md">
@@ -197,26 +175,24 @@ export default function DemandsPage() {
 
           {/* Demands Grid/List */}
           <div
-            className={`transition-all duration-500 ease-in-out ${
-              viewMode === "grid"
-                ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8"
-                : "space-y-6"
-            }`}
+            className={`transition-all duration-500 ease-in-out ${viewMode === "grid"
+              ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8"
+              : "space-y-6"
+              }`}
           >
             {pageItems.map((demand, index) => (
-              <Card 
-                key={demand.id_demand} 
-                className={`group relative overflow-hidden bg-white/80 backdrop-blur-sm border-white/30 rounded-3xl shadow-lg hover:shadow-2xl hover:shadow-amber-100/50 transition-all duration-500 hover:-translate-y-2 hover:scale-[1.02] ${
-                  viewMode === "list" ? "flex flex-row" : ""
-                }`}
-                style={{ 
+              <Card
+                key={demand.id_demand}
+                className={`group relative overflow-hidden bg-white/80 backdrop-blur-sm border-white/30 rounded-3xl shadow-lg hover:shadow-2xl hover:shadow-amber-100/50 transition-all duration-500 hover:-translate-y-2 hover:scale-[1.02] ${viewMode === "list" ? "flex flex-row" : ""
+                  }`}
+                style={{
                   animationDelay: `${index * 100}ms`,
                   animation: 'fadeInUp 0.6s ease-out forwards'
                 }}
               >
                 {/* Efeito de brilho no hover */}
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-in-out"></div>
-                
+
                 {viewMode === "grid" ? (
                   <>
                     <CardHeader className="pb-4 relative z-10">
@@ -239,12 +215,12 @@ export default function DemandsPage() {
                         )}
                       </div>
                     </CardHeader>
-                    
+
                     <CardContent className="space-y-6 pb-6 relative z-10">
                       <p className="text-slate-600 line-clamp-3 leading-relaxed text-base">
                         {demand.description}
                       </p>
-                      
+
                       <div className="flex items-center space-x-4 p-4 bg-white/80 backdrop-blur-sm rounded-2xl border border-white/20 shadow-sm">
                         <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-lg hover:shadow-blue-300/50">
                           <User className="h-6 w-6 text-white" />
@@ -254,17 +230,17 @@ export default function DemandsPage() {
                           <p className="text-sm text-slate-500 truncate">{demand.userEmail}</p>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center text-sm text-slate-500">
                         <Clock className="h-4 w-4 mr-2" />
                         Publicada em {formatDate(demand.created_at)}
                       </div>
                     </CardContent>
-                    
+
                     <CardFooter className="flex justify-between pt-6 border-t border-white/20 relative z-10">
                       <Link href={`/user/${demand.id_user}`}>
-                        <Button 
-                          size="lg" 
+                        <Button
+                          size="lg"
                           variant="outline"
                           className="bg-white/80 backdrop-blur-sm border-white/30 hover:border-amber-400 hover:bg-amber-50/50 transition-all duration-300 rounded-xl hover:scale-105 hover:shadow-lg focus:ring-2 focus:ring-amber-300"
                         >
@@ -317,8 +293,8 @@ export default function DemandsPage() {
                         </div>
                         <div className="flex space-x-3 ml-6">
                           <Link href={`/users/${demand.id_user}`}>
-                            <Button 
-                              size="lg" 
+                            <Button
+                              size="lg"
                               variant="outline"
                               className="bg-white/80 backdrop-blur-sm border-white/30 hover:border-amber-400 hover:bg-amber-50/50 transition-all duration-300 rounded-xl hover:scale-105 hover:shadow-lg focus:ring-2 focus:ring-amber-300"
                             >
@@ -326,7 +302,7 @@ export default function DemandsPage() {
                             </Button>
                           </Link>
                           <Link href={`/demand/${demand.id_demand}`}>
-                            <Button 
+                            <Button
                               size="lg"
                               className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-semibold shadow-lg rounded-xl transition-all duration-300 hover:scale-105 hover:shadow-xl hover:-translate-y-1 focus:ring-2 focus:ring-amber-300"
                             >
@@ -352,19 +328,19 @@ export default function DemandsPage() {
                 </div>
                 <h3 className="text-2xl font-bold text-slate-700 mb-4">Nenhuma demanda encontrada</h3>
                 <p className="text-slate-500 mb-8 leading-relaxed">
-                  Não encontramos demandas que correspondam aos seus critérios de busca. 
+                  Não encontramos demandas que correspondam aos seus critérios de busca.
                   Tente ajustar os filtros ou usar termos diferentes.
                 </p>
-                <Button 
+                <Button
                   onClick={() => {
                     setSearchTerm("");
-                    setSortBy("newest") 
+                    setSortBy("newest")
                   }}>
-                  </Button>
-                    <Button 
-                onClick={() => window.location.reload()} 
-                className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-medium px-6 py-2 rounded-xl shadow-lg transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
-                Limpar filtros
+                </Button>
+                <Button
+                  onClick={() => window.location.reload()}
+                  className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-medium px-6 py-2 rounded-xl shadow-lg transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
+                  Limpar filtros
                 </Button>
               </div>
             </div>
@@ -373,8 +349,8 @@ export default function DemandsPage() {
           {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex justify-center items-center space-x-3 mt-16">
-              <Button 
-                disabled={page === 1} 
+              <Button
+                disabled={page === 1}
                 onClick={() => setPage((p) => p - 1)}
                 variant="outline"
                 size="lg"
@@ -382,7 +358,7 @@ export default function DemandsPage() {
               >
                 <ChevronLeft className="h-5 w-5" />
               </Button>
-              
+
               <div className="flex space-x-2">
                 {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
                   let pageNum;
@@ -395,15 +371,15 @@ export default function DemandsPage() {
                   } else {
                     pageNum = page - 2 + i;
                   }
-                  
+
                   return (
                     <Button
                       key={pageNum}
                       variant={pageNum === page ? "default" : "outline"}
                       size="lg"
                       onClick={() => setPage(pageNum)}
-                      className={pageNum === page 
-                        ? "bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-semibold shadow-lg rounded-xl transition-all duration-300 hover:scale-105 hover:shadow-xl" 
+                      className={pageNum === page
+                        ? "bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-semibold shadow-lg rounded-xl transition-all duration-300 hover:scale-105 hover:shadow-xl"
                         : "bg-white/80 backdrop-blur-sm border-white/30 hover:border-amber-400 transition-all duration-300 hover:scale-105 rounded-xl hover:shadow-lg focus:ring-2 focus:ring-amber-300"
                       }
                     >
@@ -412,7 +388,7 @@ export default function DemandsPage() {
                   );
                 })}
               </div>
-              
+
               <Button
                 disabled={page === totalPages}
                 onClick={() => setPage((p) => p + 1)}

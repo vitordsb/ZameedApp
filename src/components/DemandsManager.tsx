@@ -19,17 +19,7 @@ import {
   Plus,
   Save,
 } from "lucide-react";
-
-interface Demand {
-  id_demand: number;
-  id_user: number;
-  title: string;
-  description: string;
-  price: number;
-  status: string;
-  created_at: string;
-  updated_at: string;
-}
+import { Demand } from "@/lib/Interfaces"
 
 export default function DemandsManager() {
   const { user } = useAuth();
@@ -91,10 +81,10 @@ export default function DemandsManager() {
 
   const createDemand = async () => {
     if (!newDemand.title || !newDemand.description || !newDemand.price) {
-      toast({ 
-        title: "Erro", 
-        description: "Preencha todos os campos obrigatórios.", 
-        variant: "destructive" 
+      toast({
+        title: "Erro",
+        description: "Preencha todos os campos obrigatórios.",
+        variant: "destructive"
       });
       return;
     }
@@ -106,13 +96,13 @@ export default function DemandsManager() {
         description: newDemand.description,
         price: parseFloat(newDemand.price),
       };
-      
+
       const res = await apiRequest("POST", "/demands", payload);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || `Status ${res.status}`);
       }
-      
+
       toast({ title: "Sucesso", description: "Demanda criada com sucesso!" });
       setIsCreating(false);
       setNewDemand({ title: "", description: "", price: "" });
@@ -147,13 +137,13 @@ export default function DemandsManager() {
         description: draftDemand.description,
         price: parseFloat(draftDemand.price),
       };
-      
+
       const res = await apiRequest("PUT", `/demands/${editingId}`, payload);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || `Status ${res.status}`);
       }
-      
+
       toast({ title: "Sucesso", description: "Demanda atualizada com sucesso!" });
       setEditingId(null);
       // Recarrega a lista de demandas
@@ -193,7 +183,7 @@ export default function DemandsManager() {
             Minhas Demandas
           </CardTitle>
           {!isCreating && (
-            <Button 
+            <Button
               onClick={startCreating}
               className="bg-amber-600 hover:bg-amber-700 text-white"
             >
@@ -222,7 +212,7 @@ export default function DemandsManager() {
                   className="border-amber-200 focus:border-amber-400 focus:ring-amber-400"
                 />
               </div>
-              
+
               <div>
                 <label className="text-sm font-semibold text-slate-600 mb-2 block">
                   Descrição *
@@ -234,7 +224,7 @@ export default function DemandsManager() {
                   className="min-h-[100px] resize-none border-amber-200 focus:border-amber-400 focus:ring-amber-400"
                 />
               </div>
-              
+
               <div>
                 <label className="text-sm font-semibold text-slate-600 mb-2 block">
                   Orçamento (R$) *
@@ -249,10 +239,10 @@ export default function DemandsManager() {
                   className="border-amber-200 focus:border-amber-400 focus:ring-amber-400"
                 />
               </div>
-              
+
               <div className="flex gap-3 pt-4">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={cancelCreating}
                   className="flex-1 border-slate-300 hover:bg-slate-50"
                   disabled={creatingDemand}
@@ -260,7 +250,7 @@ export default function DemandsManager() {
                   <X className="w-4 h-4 mr-2" />
                   Cancelar
                 </Button>
-                <Button 
+                <Button
                   onClick={createDemand}
                   className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
                   disabled={creatingDemand}
@@ -293,7 +283,7 @@ export default function DemandsManager() {
             <h3 className="text-lg font-semibold text-slate-600 mb-2">Nenhuma demanda cadastrada</h3>
             <p className="text-slate-500 mb-4">Cadastre suas primeiras demandas para encontrar prestadores de serviço.</p>
             {!isCreating && (
-              <Button 
+              <Button
                 onClick={startCreating}
                 className="bg-amber-600 hover:bg-amber-700 text-white"
               >
@@ -306,7 +296,7 @@ export default function DemandsManager() {
           <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">
             {demands.map((demand) => {
               const isEditingDemand = demand.id_demand === editingId;
-              
+
               return (
                 <Card key={demand.id_demand} className="group hover:shadow-lg transition-all duration-200 border-slate-200">
                   <CardContent className="p-6">
@@ -340,17 +330,17 @@ export default function DemandsManager() {
                           className="border-amber-200 focus:border-amber-400"
                         />
                         <div className="flex gap-2 pt-2">
-                          <Button 
-                            size="sm" 
-                            variant="outline" 
+                          <Button
+                            size="sm"
+                            variant="outline"
                             onClick={cancelEditDemand}
                             className="flex-1"
                           >
                             <X className="w-4 h-4 mr-1" />
                             Cancelar
                           </Button>
-                          <Button 
-                            size="sm" 
+                          <Button
+                            size="sm"
                             onClick={saveDemand}
                             className="flex-1 bg-amber-600 hover:bg-amber-700"
                           >
@@ -374,23 +364,23 @@ export default function DemandsManager() {
                             <Edit2 className="w-4 h-4" />
                           </Button>
                         </div>
-                        
+
                         <p className="text-slate-600 line-clamp-3 leading-relaxed">
                           {demand.description}
                         </p>
-                        
+
                         <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                           <div className="flex items-center gap-1 text-green-600 font-bold text-lg">
                             R$ {demand.price}
                           </div>
                           <Badge className={getStatusColor(demand.status)}>
                             {demand.status === 'pendente' ? 'Pendente' :
-                             demand.status === 'em_andamento' ? 'Em Andamento' :
-                             demand.status === 'concluida' ? 'Concluída' :
-                             demand.status === 'cancelada' ? 'Cancelada' : demand.status}
+                              demand.status === 'em_andamento' ? 'Em Andamento' :
+                                demand.status === 'concluida' ? 'Concluída' :
+                                  demand.status === 'cancelada' ? 'Cancelada' : demand.status}
                           </Badge>
                         </div>
-                        
+
                         <div className="text-xs text-slate-500">
                           Criada em: {new Date(demand.created_at).toLocaleDateString('pt-BR')}
                         </div>

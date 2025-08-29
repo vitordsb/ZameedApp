@@ -1,24 +1,19 @@
-
 import { QueryClient } from "@tanstack/react-query";
-
 export const API_BASE_URL = "https://zameed-backend.onrender.com";
 
-export async function apiRequest(
-  method: string,
-  path: string,
-  data?: Record<string, unknown> | FormData
-): Promise<Response> {
+export async function apiRequest(method: string, path: string, data?: unknown): Promise<Response> {
   const url = API_BASE_URL + path;
-
   const token = sessionStorage.getItem("token");
-
   const headers: Record<string, string> = {};
+
   let bodyContent: BodyInit | undefined;
 
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-
+  else if (method === "POST") {
+    headers["Content-Type"] = "application/json";
+  }
   if (data) {
     if (data instanceof FormData) {
       bodyContent = data;
@@ -47,4 +42,6 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+
 

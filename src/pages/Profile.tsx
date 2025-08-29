@@ -539,9 +539,7 @@ export default function Profile() {
       formData.append('image', selectedFile);
       formData.append('user_id', user.id.toString());
 
-      const res = await apiRequest("POST", "/upload/image", formData, {
-        'Content-Type': 'multipart/form-data'
-      });
+      const res = await apiRequest("POST", "/upload/image", formData);
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));

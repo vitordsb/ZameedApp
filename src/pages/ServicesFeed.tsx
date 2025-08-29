@@ -1,4 +1,3 @@
-
 // src/pages/ServicesFeed.tsx
 import { useState, useEffect } from "react";
 import { Link } from "wouter";
@@ -35,59 +34,7 @@ import {
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
-
-interface ServiceProvider {
-  provider_id: number;
-  user_id: number;
-  profession: string;
-  views_profile: number;
-  about: string | null;
-}
-
-interface ServiceFreelancer {
-  id_serviceFreelancer: number;
-  id_provider: number;
-  title: string;
-  description: string;
-  price: string; 
-  createdAt: string;
-  updatedAt: string;
-  ServiceProvider: ServiceProvider;
-}
-
-interface ServicesResponse {
-  code: number;
-  message: string;
-  servicesFreelancer: ServiceFreelancer[];
-  success: boolean;
-}
-
-interface User {
-  id: number;
-  name: string;
-  email: string;
-  cpf?: string;
-  cnpj?: string;
-  cidade_id?: number;
-  type: "prestador" | "contratante";
-  gender?: string;
-  birth?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-interface UserResponse {
-  code: number;
-  message: string;
-  user: User;
-  success: boolean;
-}
-
-interface EnrichedService extends ServiceFreelancer {
-  userName: string;
-  userEmail: string;
-  userType: string;
-}
+import { ServicesResponse, EnrichedService } from "@/lib/Interfaces";
 
 export default function ServicesFeed() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -96,9 +43,9 @@ export default function ServicesFeed() {
   const [page, setPage] = useState(1);
   const perPage = 6;
   const { user: currentUser } = useAuth();
-  const { 
-    data: servicesData, 
-    isLoading: loadingServices, 
+  const {
+    data: servicesData,
+    isLoading: loadingServices,
     isError: errorServices,
     error: servicesError
   } = useQuery<ServicesResponse>({
@@ -113,10 +60,10 @@ export default function ServicesFeed() {
     staleTime: 5 * 60 * 1000, // 5 minutos
   });
 
-  const { 
-    data: enrichedServices, 
+  const {
+    data: enrichedServices,
     isLoading: loadingUsers,
-    isError: errorUsers 
+    isError: errorUsers
   } = useQuery<EnrichedService[]>({
     queryKey: ["enriched-services", servicesData?.servicesFreelancer, currentUser?.id],
     queryFn: async () => {
@@ -125,8 +72,8 @@ export default function ServicesFeed() {
       const enriched: EnrichedService[] = [];
       for (const service of services) {
         try {
-          let userData: User | null = null;
-          
+          let userData = null;
+
           if (currentUser && service.ServiceProvider.user_id === currentUser.id) {
             userData = currentUser;
             console.log(`Usando dados do usuário logado para serviço ${service.id_serviceFreelancer}`);
@@ -134,7 +81,7 @@ export default function ServicesFeed() {
             try {
               const userRes = await apiRequest("GET", `/users/${service.ServiceProvider.user_id}`);
               if (userRes.ok) {
-                const userResponse: UserResponse = await userRes.json();
+                const userResponse = await userRes.json();
                 userData = userResponse.user;
                 console.log(`Dados do usuário ${service.ServiceProvider.user_id} carregados da API`);
               } else {
@@ -216,8 +163,8 @@ export default function ServicesFeed() {
                   {servicesError?.message || "Erro ao carregar serviços"}
                 </p>
               </div>
-              <Button 
-                onClick={() => window.location.reload()} 
+              <Button
+                onClick={() => window.location.reload()}
                 className="bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-medium px-6 py-2 rounded-xl shadow-lg transition-all duration-300 hover:shadow-xl hover:-translate-y-1"
               >
                 Tentar novamente
@@ -290,8 +237,8 @@ export default function ServicesFeed() {
           <div className="mb-8">
             <div className="flex items-center justify-between">
               <p className="text-lg text-slate-600">
-                {filtered.length === 0 ? "Nenhum serviço encontrado" : 
-                 `${filtered.length} serviço${filtered.length !== 1 ? 's' : ''} encontrado${filtered.length !== 1 ? 's' : ''}`}
+                {filtered.length === 0 ? "Nenhum serviço encontrado" :
+                  `${filtered.length} serviço${filtered.length !== 1 ? 's' : ''} encontrado${filtered.length !== 1 ? 's' : ''}`}
               </p>
               {searchTerm && (
                 <Badge className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full transition-all duration-200 hover:scale-105 hover:shadow-md">
@@ -303,26 +250,24 @@ export default function ServicesFeed() {
 
           {/* Services Grid/List */}
           <div
-            className={`transition-all duration-500 ease-in-out ${
-              viewMode === "grid"
-                ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8"
-                : "space-y-6"
-            }`}
+            className={`transition-all duration-500 ease-in-out ${viewMode === "grid"
+              ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8"
+              : "space-y-6"
+              }`}
           >
             {pageItems.map((svc, index) => (
-              <Card 
-                key={svc.id_serviceFreelancer} 
-                className={`group relative overflow-hidden bg-white/80 backdrop-blur-sm border-white/30 rounded-3xl shadow-lg hover:shadow-2xl hover:shadow-orange-100/50 transition-all duration-500 hover:-translate-y-2 hover:scale-[1.02] ${
-                  viewMode === "list" ? "flex flex-row" : ""
-                }`}
-                style={{ 
+              <Card
+                key={svc.id_serviceFreelancer}
+                className={`group relative overflow-hidden bg-white/80 backdrop-blur-sm border-white/30 rounded-3xl shadow-lg hover:shadow-2xl hover:shadow-orange-100/50 transition-all duration-500 hover:-translate-y-2 hover:scale-[1.02] ${viewMode === "list" ? "flex flex-row" : ""
+                  }`}
+                style={{
                   animationDelay: `${index * 100}ms`,
                   animation: 'fadeInUp 0.6s ease-out forwards'
                 }}
               >
                 {/* Efeito de brilho no hover */}
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-in-out"></div>
-                
+
                 {viewMode === "grid" ? (
                   <>
                     <CardHeader className="pb-4 relative z-10">
@@ -337,31 +282,25 @@ export default function ServicesFeed() {
                             </CardDescription>
                           </div>
                         </div>
-                        {isNewService(svc.createdAt) && (
-                          <Badge className="bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700 transition-all duration-200 hover:scale-105 hover:shadow-lg">
-                            <Star className="h-3 w-3 mr-1" />
-                            Novo
-                          </Badge>
-                        )}
                       </div>
                     </CardHeader>
-                    
+
                     <CardContent className="space-y-6 pb-6 relative z-10">
-                      <p className="text-slate-600 line-clamp-3 leading-relaxed text-base">
-                        {svc.description}
-                      </p>
-                      
+
                       <div className="flex items-center space-x-4 p-4 bg-white/80 backdrop-blur-sm rounded-2xl border border-white/20 shadow-sm">
                         <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-amber-600 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-lg hover:shadow-orange-300/50">
                           <User className="h-6 w-6 text-white" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold text-slate-800 truncate text-lg">{svc.userName}</p>
-                          <p className="text-sm text-slate-500 truncate">{svc.userEmail}</p>
-                          <Badge className="mt-1 bg-blue-100 text-blue-800 text-xs">
-                            {svc.ServiceProvider.profession}
-                          </Badge>
-                          {/* Indicador se é o usuário logado */}
+                          <div className="flex items-center space-x-1">
+                            <Badge className="mt-1 bg-blue-100 text-blue-800 text-xs">
+                              {svc.ServiceProvider.profession || "Não informado"}
+                            </Badge>
+                            <Badge className="mt-1 bg-blue-100 text-blue-800 text-xs">
+                              {svc.userType}
+                            </Badge>
+                          </div>
                           {currentUser && svc.ServiceProvider.user_id === currentUser.id && (
                             <Badge className="mt-1 ml-2 bg-green-100 text-green-800 text-xs">
                               Seu serviço
@@ -369,17 +308,17 @@ export default function ServicesFeed() {
                           )}
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center text-sm text-slate-500">
                         <Clock className="h-4 w-4 mr-2" />
                         Publicado em {formatDate(svc.createdAt)}
                       </div>
                     </CardContent>
-                    
+
                     <CardFooter className="flex justify-between pt-6 border-t border-white/20 relative z-10">
                       <Link href={`/providers/${svc.ServiceProvider.provider_id}`}>
-                        <Button 
-                          size="lg" 
+                        <Button
+                          size="lg"
                           variant="outline"
                           className="bg-white/80 backdrop-blur-sm border-white/30 hover:border-orange-400 hover:bg-orange-50/50 transition-all duration-300 rounded-xl hover:scale-105 hover:shadow-lg focus:ring-2 focus:ring-orange-300"
                         >
@@ -388,7 +327,7 @@ export default function ServicesFeed() {
                         </Button>
                       </Link>
                       <Link href={`/service/${svc.id_serviceFreelancer}`}>
-                        <Button 
+                        <Button
                           size="lg"
                           className="bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-semibold shadow-lg rounded-xl transition-all duration-300 hover:scale-105 hover:shadow-xl hover:-translate-y-1 focus:ring-2 focus:ring-orange-300"
                         >
@@ -449,8 +388,8 @@ export default function ServicesFeed() {
                         </div>
                         <div className="flex space-x-3 ml-6">
                           <Link href={`/providers/${svc.ServiceProvider.provider_id}`}>
-                            <Button 
-                              size="lg" 
+                            <Button
+                              size="lg"
                               variant="outline"
                               className="bg-white/80 backdrop-blur-sm border-white/30 hover:border-orange-400 hover:bg-orange-50/50 transition-all duration-300 rounded-xl hover:scale-105 hover:shadow-lg focus:ring-2 focus:ring-orange-300"
                             >
@@ -458,7 +397,7 @@ export default function ServicesFeed() {
                             </Button>
                           </Link>
                           <Link href={`/service/${svc.id_serviceFreelancer}`}>
-                            <Button 
+                            <Button
                               size="lg"
                               className="bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-semibold shadow-lg rounded-xl transition-all duration-300 hover:scale-105 hover:shadow-xl hover:-translate-y-1 focus:ring-2 focus:ring-orange-300"
                             >
@@ -483,10 +422,10 @@ export default function ServicesFeed() {
                 </div>
                 <h3 className="text-2xl font-bold text-slate-700 mb-4">Nenhum serviço encontrado</h3>
                 <p className="text-slate-500 mb-8 leading-relaxed">
-                  Não encontramos serviços que correspondam aos seus critérios de busca. 
+                  Não encontramos serviços que correspondam aos seus critérios de busca.
                   Tente ajustar os filtros ou usar termos diferentes.
                 </p>
-                <Button 
+                <Button
                   onClick={() => {
                     setSearchTerm("");
                     setSortBy("newest");
@@ -503,8 +442,8 @@ export default function ServicesFeed() {
           {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex justify-center items-center space-x-3 mt-16">
-              <Button 
-                disabled={page === 1} 
+              <Button
+                disabled={page === 1}
                 onClick={() => setPage((p) => p - 1)}
                 variant="outline"
                 size="lg"
@@ -512,7 +451,7 @@ export default function ServicesFeed() {
               >
                 <ChevronLeft className="h-5 w-5" />
               </Button>
-              
+
               <div className="flex space-x-2">
                 {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
                   let pageNum;
@@ -525,15 +464,15 @@ export default function ServicesFeed() {
                   } else {
                     pageNum = page - 2 + i;
                   }
-                  
+
                   return (
                     <Button
                       key={pageNum}
                       variant={pageNum === page ? "default" : "outline"}
                       size="lg"
                       onClick={() => setPage(pageNum)}
-                      className={pageNum === page 
-                        ? "bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-semibold shadow-lg rounded-xl transition-all duration-300 hover:scale-105 hover:shadow-xl" 
+                      className={pageNum === page
+                        ? "bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-semibold shadow-lg rounded-xl transition-all duration-300 hover:scale-105 hover:shadow-xl"
                         : "bg-white/80 backdrop-blur-sm border-white/30 hover:border-orange-400 transition-all duration-300 hover:scale-105 rounded-xl hover:shadow-lg focus:ring-2 focus:ring-orange-300"
                       }
                     >
@@ -542,7 +481,7 @@ export default function ServicesFeed() {
                   );
                 })}
               </div>
-              
+
               <Button
                 disabled={page === totalPages}
                 onClick={() => setPage((p) => p + 1)}
